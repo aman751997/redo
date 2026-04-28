@@ -46,9 +46,3 @@ See [`STRESS-TEST.md`](./STRESS-TEST.md) for the adversarial read of this premis
 - **Just a transcript viewer.** What Langfuse and Braintrust already ship. Doesn't let you fork, diff, or restore filesystem state.
 - **Let Anthropic ship it.** They might, for the simple replay layer. They won't for the corpus-alignment layer (too standalone). The indie play is to build the durable layer first and accept that the simple layer is a commodity in 18 months.
 - **Wait for rr2 or LLDB-for-agents.** The prior art for time-travel debugging is a decade old and still hasn't made it to the agent domain. Someone has to port it. That someone can be you.
-
-## The personal why
-
-This is a project you can put your name on for a decade. Deterministic replay of a non-deterministic runtime is a research-grade bet. The design doc alone will outlast any specific agent framework. The skills you pick up — framed binary formats, content-addressed storage, clock virtualization, sequence alignment — are portable to any systems role for the rest of your career.
-
-And when the LLM hype cycle ends, the debugger still works on whatever comes next.
