@@ -67,9 +67,9 @@ redo replay  <SESSION_ID>       # scrubbable TUI
 
 TUI keys: `j`/`k` step one frame, `J`/`K` jump 10, `g`/`G` first/last, `/` filter by event-kind substring, `q` quit.
 
-### Linux note
+### Platform note
 
-v0.0.1 is a Linux-first build. The recorder uses `inotify` for low-latency dropbox pickup on Linux and falls back to a 100 ms polling loop on other Unixes for development.
+v0.0.1 targets macOS. The recorder watches the dropbox via a 100 ms polling loop on macOS (and any non-Linux Unix). On Linux, an `inotify` fast path is compiled in but is not the primary supported target for this release.
 
 ## Status
 

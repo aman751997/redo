@@ -14,12 +14,12 @@ Milestone ladder with honest time estimates. Solo, 80% of time on core, 20% on u
 
 | Version | What ships | Part-time (15 hr/wk) | Full-time (40 hr/wk) |
 |---|---|---|---|
-| **v0.0.1** | Hooks Agent SDK + Claude Code, records tool calls + model streams + file-writes to a framed binary log. TUI replays as scrubbable transcript. Linux only. | **3–4 weeks** | **1.5 weeks** |
+| **v0.0.1** | Hooks Agent SDK + Claude Code, records tool calls + model streams + file-writes to a framed binary log. TUI replays as scrubbable transcript. macOS only. | **3–4 weeks** | **1.5 weeks** |
 | **v0.1** | Timeline scrubbing, step-through, fork-and-diff-two-runs (text-level only). Ship on GitHub. First HN post. | **+6–8 weeks** | **+2–3 weeks** |
 | **v0.2** | Content-addressed filesystem snapshots (userspace CoW via blake3 Merkle). Replay actually restores file state at any frame. | **+2–3 months** | **+4–5 weeks** |
 | **v0.3** | PTY interception + syscall capture. Clock virtualization. `/dev/urandom` interception. The "real determinism" layer. | **+3–4 months** | **+6–8 weeks** |
 | **v0.4** | Fork-from-frame with external-API mocking (return recorded responses). Query DSL for trace search. | **+1.5 months** | **+3 weeks** |
-| **v0.5** | macOS port (`DYLD_INSERT_LIBRARIES` + interposing + Endpoint Security API where applicable). | **+3 months** | **+6 weeks** |
+| **v0.5** | Linux port (`LD_PRELOAD` shim + inotify fast path already compiled in). | **+3 months** | **+6 weeks** |
 | **v0.6** | Hosted ingestion + multi-tenancy + PII boundaries for corpus contributions. Paid tier. | **+2 months** | **+4 weeks** |
 | **v0.7** | BLAST / Smith-Waterman alignment engine + substitution matrix learned from seed corpus. **The killer feature.** | **+2–3 months** | **+4–6 weeks** |
 | **v1.0** | Polish, onboarding flow, docs site, auth, billing, telemetry. | **+1.5–2 months** | **+3–4 weeks** |
