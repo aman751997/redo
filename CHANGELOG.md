@@ -4,6 +4,27 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.1.0]
+
+Timeline scrubbing, fork-from-frame, and text-level diff between two recorded sessions. macOS only.
+
+### Added
+- Span grouping in the TUI: consecutive related frames coalesce into spans (tool-call, model-stream, input-stream, resize, marker singletons). Defined in `src/tui/spans.rs`.
+- One-line scrub bar at the bottom of the replay TUI showing the current frame's relative position with span boundaries marked and the cursor cell highlighted.
+- New TUI keybinds: `shift-J` / `shift-K` jump to next / previous span boundary; `0`-`9` jump to that decile of the session; `Home` / `End` alias `g` / `G`.
+- `redo fork <SESSION_ID> --at <FRAME> [--label LABEL]`: copies frames `[0..=FRAME]` from a parent session into a fresh session whose `meta.json` is annotated with `parent_session_id` and `forked_at_frame`. A closing `Marker` with label `fork-from <parent>:<frame>` is appended.
+- `Meta` gains optional `parent_session_id: Uuid` and `forked_at_frame: u64`. Both `#[serde(default)]` so older session meta files still deserialise unchanged.
+- TUI `f` keybind: fork at the current cursor frame, exit, and print the new session id on stdout (with a human-friendly note on stderr).
+- `redo diff <SESSION_A> <SESSION_B> [--context N] [--no-color]`: text-level Myers diff (via the `similar` crate) over each session's canonical-line projection (`#<seq> <kind> <summary>`). Honours `--no-color` and `NO_COLOR=1`.
+- `crate::format::canonical` module exporting `CanonicalLine` / `canonicalize` / `canonicalize_all`, shared between the diff CLI and the in-TUI diff view.
+- TUI `d` keybind: prompts for a peer session id and opens a side-by-side diff view (two columns of canonical-tuple lines, aligned and highlighted) with `j` / `k` scrolling and `q` to return.
+- `similar = "2.6"` added as a dependency for line-level Myers diff.
+- Golden-fixture coverage for diff output: `tests/diff_fixture.rs` against `tests/fixtures/diff/expected.txt`.
+
+### Changed
+- TUI status bar advertises the new keybinds.
+- `redo replay` is now action-bearing on exit: a fork pressed inside the TUI prints the new session id once the terminal is restored.
+
 ## [0.0.1] - 2026-05-01
 
 First end-to-end slice. Records Claude Code hook events into a framed, seekable log on disk and replays them in a scrubbable TUI. macOS only.
@@ -25,5 +46,6 @@ First end-to-end slice. Records Claude Code hook events into a framed, seekable 
 - Filesystem snapshots are out of scope until v0.2; the right TUI pane is a placeholder.
 - Replay is read-only; fork-from-frame and diff-two-runs are v0.1.
 
-[Unreleased]: https://github.com/aman751997/redo/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/aman751997/redo/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/aman751997/redo/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/aman751997/redo/releases/tag/v0.0.1

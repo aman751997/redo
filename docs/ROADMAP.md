@@ -14,7 +14,7 @@ Milestone ladder with honest time estimates. Solo, 80% of time on core, 20% on u
 
 | Version | What ships | Part-time (15 hr/wk) | Full-time (40 hr/wk) |
 |---|---|---|---|
-| **v0.0.1** | Hooks Agent SDK + Claude Code, records tool calls + model streams + file-writes to a framed binary log. TUI replays as scrubbable transcript. macOS only. | **3–4 weeks** | **1.5 weeks** |
+| **v0.0.1** | [shipped] Hooks Agent SDK + Claude Code, records tool calls + model streams + file-writes to a framed binary log. TUI replays as scrubbable transcript. macOS only. | **3–4 weeks** | **1.5 weeks** |
 | **v0.1** | Timeline scrubbing, step-through, fork-and-diff-two-runs (text-level only). Ship on GitHub. First HN post. | **+6–8 weeks** | **+2–3 weeks** |
 | **v0.2** | Content-addressed filesystem snapshots (userspace CoW via blake3 Merkle). Replay actually restores file state at any frame. | **+2–3 months** | **+4–5 weeks** |
 | **v0.3** | PTY interception + syscall capture. Clock virtualization. `/dev/urandom` interception. The "real determinism" layer. | **+3–4 months** | **+6–8 weeks** |

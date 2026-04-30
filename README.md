@@ -65,7 +65,27 @@ redo inspect <SESSION_ID>       # frames as NDJSON for scripting
 redo replay  <SESSION_ID>       # scrubbable TUI
 ```
 
-TUI keys: `j`/`k` step one frame, `J`/`K` jump 10, `g`/`G` first/last, `/` filter by event-kind substring, `q` quit.
+TUI keys: `j`/`k` step one frame, `J`/`K` jump to next/prev span boundary, `g`/`G` (or `Home`/`End`) first/last, `0`-`9` jump to that decile of the session, `f` fork at the current frame, `d` open a side-by-side diff against a peer session, `/` filter by event-kind substring, `q` quit.
+
+### 4. Fork & diff
+
+`redo fork` branches a session at any frame. The resulting session is a complete recording on its own — copy of the parent's `[0..=FRAME]` prefix plus a closing `fork-from <parent>:<frame>` marker — and its `meta.json` records the parent id and the fork frame.
+
+```bash
+redo fork <SESSION_ID> --at 42 --label experiment
+# prints the new session id on stdout
+```
+
+You can also press `f` at any frame inside `redo replay` to fork at the cursor. The TUI exits cleanly and prints the new session id.
+
+`redo diff` compares two sessions at the structural level: each session is projected to a sequence of canonical lines `#<seq> <kind> <summary>` (which elides payload bytes — see `src/format/canonical.rs`) and the projections are diffed via Myers. The output is unified-diff style with optional ANSI colour. `--no-color` and the `NO_COLOR` environment variable both suppress escapes.
+
+```bash
+redo diff <SESSION_A> <SESSION_B> --context 5
+NO_COLOR=1 redo diff <SESSION_A> <SESSION_B>
+```
+
+Inside `redo replay`, press `d` and enter a peer session id to open a two-column side-by-side view of the same diff with `j`/`k` scrolling and `q` to return.
 
 ### Platform note
 
@@ -73,7 +93,7 @@ v0.0.1 targets macOS. The recorder watches the dropbox via a 100 ms polling loop
 
 ## Status
 
-v0.0.1 shipped on `main`: hook recording + replay TUI working end-to-end on macOS. Content-addressed filesystem snapshots land in v0.2.
+v0.1 ships span grouping + scrub bar in the replay TUI, fork-from-frame, and text-level diff between two recorded sessions on macOS. v0.0.1 is the prior milestone (hook recording + replay TUI). Content-addressed filesystem snapshots land in v0.2.
 
 - [`CHANGELOG.md`](./CHANGELOG.md) — what shipped, per release
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) — milestone ladder ahead
