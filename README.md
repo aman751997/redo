@@ -28,9 +28,52 @@ Three design decisions carry most of the weight:
 
 See [`docs/HOW.md`](./docs/HOW.md) for the full design walk-through.
 
+## Quick start
+
+`redo` ships four subcommands and one hook bridge. Storage defaults to `$XDG_DATA_HOME/redo` (fallback `~/.local/share/redo`); pass `--root` to override.
+
+### 1. Start a recorder
+
+```bash
+redo record
+# session_id=018f2a5b-...-...
+# session_dir=/home/you/.local/share/redo/sessions/018f2a5b-...
+# dropbox=/home/you/.local/share/redo/sessions/018f2a5b-.../dropbox
+# env REDO_SESSION_DIR=/home/you/.local/share/redo/sessions/018f2a5b-...
+```
+
+The recorder prints a small banner you can `eval` or parse from a wrapper. It runs until you send `SIGINT` / `SIGTERM`, at which point it drains pending hook events and finalises `meta.json`.
+
+### 2. Wire Claude Code hooks to the bridge
+
+Export the session dir and point each Claude Code hook at `redo hook`:
+
+```bash
+export REDO_SESSION_DIR=/path/from/banner
+# in your Claude Code hook config:
+#   command: redo hook PreToolUse
+# (similarly for PostToolUse, UserPromptSubmit, Stop, ...)
+```
+
+Each invocation reads the hook's stdin JSON and atomically stages a single file in the session's `dropbox/`. The recorder watches that directory and ingests every file as one frame in the log.
+
+### 3. List, inspect, and replay
+
+```bash
+redo list                       # table of sessions
+redo inspect <SESSION_ID>       # frames as NDJSON for scripting
+redo replay  <SESSION_ID>       # scrubbable TUI
+```
+
+TUI keys: `j`/`k` step one frame, `J`/`K` jump 10, `g`/`G` first/last, `/` filter by event-kind substring, `q` quit.
+
+### Linux note
+
+v0.0.1 is a Linux-first build. The recorder uses `inotify` for low-latency dropbox pickup on Linux and falls back to a 100 ms polling loop on other Unixes for development.
+
 ## Status
 
-Pre-v0.0.1. Design docs only; implementation in progress.
+v0.0.1 in progress: hook recording + replay TUI working end-to-end, content-addressed filesystem snapshots land in v0.2.
 
 See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for the milestone ladder.
 
