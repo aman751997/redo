@@ -42,6 +42,20 @@ use spans::{Span, SpanKind};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+/// Action requested by the user when the TUI exits. The caller turns these
+/// into CLI side-effects (printing a new session id, opening a diff, etc.).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExitAction {
+    /// User pressed `q` / Ctrl-C; nothing further to do.
+    None,
+    /// User pressed `f` at frame `at` of session `parent`; the caller should
+    /// run `redo fork`.
+    ForkAt { parent: uuid::Uuid, at: u64 },
+    /// User pressed `d` and entered a peer session id; the caller should
+    /// run a diff.
+    Diff { peer: String },
+}
+
 struct App {
     events: Vec<Event>,
     spans: Vec<Span>,
@@ -51,7 +65,11 @@ struct App {
     cursor: usize,
     filter: String,
     filter_editing: bool,
+    /// Single-line input buffer for the `d` peer-session prompt.
+    peer_prompt: Option<String>,
     quit: bool,
+    parent_session: uuid::Uuid,
+    action: ExitAction,
 }
 
 impl App {
@@ -70,7 +88,10 @@ impl App {
             cursor: 0,
             filter: String::new(),
             filter_editing: false,
+            peer_prompt: None,
             quit: false,
+            parent_session: uuid::Uuid::nil(),
+            action: ExitAction::None,
         }
     }
 
@@ -185,17 +206,41 @@ impl App {
     }
 }
 
-/// Public entry point — load the session, run the TUI, restore the terminal.
+/// Public entry point — load the session, run the TUI, restore the terminal,
+/// then act on the user's exit choice (e.g. fork at a frame).
 pub fn run(root: &Path, session_id: uuid::Uuid) -> Result<()> {
     let store = SessionStore::new(root, session_id);
     let result = SessionReader::read(store.log_path()).context("read session log")?;
 
+    let mut app = App::new(result.events);
+    app.parent_session = session_id;
+
     let mut terminal = setup_terminal().context("setup terminal")?;
-    let app_result = run_app(&mut terminal, App::new(result.events));
+    let run_result = run_app(&mut terminal, &mut app);
     if let Err(e) = restore_terminal(&mut terminal) {
         tracing::warn!(error = %e, "terminal restore failed");
     }
-    app_result
+    run_result?;
+
+    // Act on the requested exit action. We're back in cooked-mode here so
+    // any prints land on the user's normal terminal.
+    match app.action {
+        ExitAction::None => Ok(()),
+        ExitAction::ForkAt { parent, at } => {
+            let new_id =
+                crate::cli::fork::run(root, parent, at, None).context("fork at cursor frame")?;
+            // Print to stderr so it can't be confused with regular replay
+            // output and is easy to capture in shell pipelines.
+            eprintln!("forked session {new_id} (parent {parent} at frame {at})");
+            println!("{new_id}");
+            Ok(())
+        }
+        ExitAction::Diff { peer: _ } => {
+            // The diff CLI lands in a follow-up commit; until then this is a
+            // no-op so the keybind is wired without a half-built side effect.
+            Ok(())
+        }
+    }
 }
 
 fn setup_terminal() -> Result<Tui> {
@@ -213,13 +258,13 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
     Ok(())
 }
 
-fn run_app(terminal: &mut Tui, mut app: App) -> Result<()> {
+fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     while !app.quit {
-        terminal.draw(|f| draw(f, &mut app))?;
+        terminal.draw(|f| draw(f, app))?;
         if event::poll(Duration::from_millis(200))? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    handle_key(&mut app, key);
+                    handle_key(app, key);
                 }
             }
         }
@@ -248,6 +293,34 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         }
         return;
     }
+    if app.peer_prompt.is_some() {
+        match key.code {
+            KeyCode::Esc => {
+                app.peer_prompt = None;
+            }
+            KeyCode::Enter => {
+                if let Some(s) = app.peer_prompt.take() {
+                    let trimmed = s.trim().to_string();
+                    if !trimmed.is_empty() {
+                        app.action = ExitAction::Diff { peer: trimmed };
+                        app.quit = true;
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(buf) = app.peer_prompt.as_mut() {
+                    buf.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(buf) = app.peer_prompt.as_mut() {
+                    buf.push(c);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
     match key.code {
         KeyCode::Char('q') => app.quit = true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.quit = true,
@@ -259,6 +332,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('G') | KeyCode::End => app.jump_last(),
         KeyCode::Char(c @ '0'..='9') => {
             app.jump_decile(c.to_digit(10).unwrap() as u8);
+        }
+        KeyCode::Char('f') => {
+            // Fork at the current frame. Underlying frame index = visible[cursor].
+            if let Some(&frame) = app.visible.get(app.cursor) {
+                app.action = ExitAction::ForkAt {
+                    parent: app.parent_session,
+                    at: frame as u64,
+                };
+                app.quit = true;
+            }
+        }
+        KeyCode::Char('d') => {
+            app.peer_prompt = Some(String::new());
         }
         KeyCode::Char('/') => {
             app.filter_editing = true;
@@ -332,13 +418,16 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     // Status bar.
     let status = if app.filter_editing {
         format!("filter: {}_  (Esc to cancel, Enter to apply)", app.filter)
+    } else if let Some(buf) = &app.peer_prompt {
+        format!("diff peer session: {buf}_  (Esc to cancel, Enter to open diff)")
     } else if !app.filter.is_empty() {
         format!(
-            "j/k step  J/K span  g/G first/last  0-9 decile  / filter (active: '{}')  q quit",
+            "j/k step  J/K span  g/G first/last  0-9 decile  f fork  d diff  / filter (active: '{}')  q quit",
             app.filter
         )
     } else {
-        "j/k step  J/K span  g/G first/last  0-9 decile  / filter  q quit".to_string()
+        "j/k step  J/K span  g/G first/last  0-9 decile  f fork  d diff  / filter  q quit"
+            .to_string()
     };
     let status_p = Paragraph::new(status);
     f.render_widget(status_p, outer[2]);

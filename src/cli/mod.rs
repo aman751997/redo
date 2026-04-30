@@ -9,12 +9,15 @@
 //! * `inspect` — dump a session's frames as JSON for scripting.
 //! * `hook` — one-shot bridge invoked by Claude Code hooks; reads stdin,
 //!   writes one dropbox file.
+//! * `fork` — branch a session at a frame; writes a new session that copies
+//!   the prefix and is annotated with parent metadata.
 
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 
+pub mod fork;
 pub mod inspect;
 pub mod list;
 
@@ -57,6 +60,22 @@ pub enum Command {
     /// Print a session's frames as JSON, one per line.
     Inspect {
         session_id: String,
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+
+    /// Branch a session at a specific frame. Copies frames `[0..=at]` into a
+    /// fresh session whose meta points back at the parent. Prints the new
+    /// session id on stdout.
+    Fork {
+        /// Source session UUID.
+        session_id: String,
+        /// Frame index to fork at (zero-based, inclusive).
+        #[arg(long)]
+        at: u64,
+        /// Optional user-visible label embedded in the fork marker.
+        #[arg(long)]
+        label: Option<String>,
         #[arg(long)]
         root: Option<PathBuf>,
     },

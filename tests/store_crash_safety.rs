@@ -66,6 +66,8 @@ fn meta_roundtrip_atomic() {
         pid_starttime: 67890,
         discarded_late_events: 0,
         created_at: "2026-04-29T00:00:00Z".into(),
+        parent_session_id: None,
+        forked_at_frame: None,
     };
     store.write_meta(&meta).unwrap();
     let back = store.read_meta().unwrap();
@@ -205,4 +207,40 @@ fn empty_log_rejects_with_clear_error() {
     std::fs::write(&p, b"").unwrap();
     let err = SessionReader::read(&p).unwrap_err().to_string();
     assert!(err.contains("no header"), "got: {err}");
+}
+
+#[test]
+fn meta_deserialises_old_session_without_fork_fields() {
+    // Older meta.json files predate `parent_session_id` and `forked_at_frame`.
+    // The reader must accept them and default the missing fields to None.
+    let json = r#"{
+        "session_id": "00000000-0000-0000-0000-000000000000",
+        "state": "complete",
+        "pid": 1,
+        "pid_starttime": 0,
+        "discarded_late_events": 0,
+        "created_at": "2026-01-01T00:00:00Z"
+    }"#;
+    let meta: redo::store::Meta = serde_json::from_str(json).expect("parse old meta.json");
+    assert!(meta.parent_session_id.is_none());
+    assert!(meta.forked_at_frame.is_none());
+}
+
+#[test]
+fn meta_with_fork_fields_roundtrips() {
+    let parent = Uuid::now_v7();
+    let meta = redo::store::Meta {
+        session_id: Uuid::now_v7(),
+        state: redo::store::SessionState::Complete,
+        pid: 1,
+        pid_starttime: 0,
+        discarded_late_events: 0,
+        created_at: "2026-05-01T00:00:00Z".into(),
+        parent_session_id: Some(parent),
+        forked_at_frame: Some(42),
+    };
+    let s = serde_json::to_string(&meta).unwrap();
+    let back: redo::store::Meta = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.parent_session_id, Some(parent));
+    assert_eq!(back.forked_at_frame, Some(42));
 }

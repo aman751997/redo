@@ -33,4 +33,13 @@ pub struct Meta {
     pub discarded_late_events: u64,
     /// ISO 8601 timestamp at session creation.
     pub created_at: String,
+    /// Session id this one was forked from, if any. `None` for organic
+    /// recordings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<Uuid>,
+    /// Frame index in the parent at which this session was forked. The first
+    /// frame in this session corresponds to seq 0 of the parent's `[0..=N]`
+    /// prefix. `None` for organic recordings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_at_frame: Option<u64>,
 }

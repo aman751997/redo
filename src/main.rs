@@ -38,6 +38,18 @@ fn main() -> Result<()> {
             let id = Uuid::parse_str(&session_id).context("parse session id as UUID")?;
             cli::inspect::run(&root, id)
         }
+        Command::Fork {
+            session_id,
+            at,
+            label,
+            root,
+        } => {
+            let root = cli::resolve_root(root)?;
+            let id = Uuid::parse_str(&session_id).context("parse session id as UUID")?;
+            let new_id = cli::fork::run(&root, id, at, label)?;
+            println!("{new_id}");
+            Ok(())
+        }
         Command::Hook { kind, session_dir } => redo::hook::run(&kind, session_dir).map(|_| ()),
     }
 }

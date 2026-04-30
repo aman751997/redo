@@ -68,6 +68,8 @@ pub fn run(cfg: Config) -> Result<Uuid> {
         pid_starttime: 0,
         discarded_late_events: 0,
         created_at: header.created_at.clone(),
+        parent_session_id: None,
+        forked_at_frame: None,
     };
     store.write_meta(&meta).context("write initial meta.json")?;
 
