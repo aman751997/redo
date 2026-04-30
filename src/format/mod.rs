@@ -1,6 +1,8 @@
+pub mod canonical;
 pub mod event;
 pub mod header;
 
+pub use canonical::{canonicalize, canonicalize_all, CanonicalLine};
 pub use event::Event;
 pub use header::{SessionHeader, TermSize};
 
