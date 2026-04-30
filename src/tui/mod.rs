@@ -36,6 +36,7 @@ use ratatui::Terminal;
 use crate::format::Event;
 use crate::store::{SessionReader, SessionStore};
 
+pub mod diff_view;
 pub mod spans;
 
 use spans::{Span, SpanKind};
@@ -216,7 +217,7 @@ pub fn run(root: &Path, session_id: uuid::Uuid) -> Result<()> {
     app.parent_session = session_id;
 
     let mut terminal = setup_terminal().context("setup terminal")?;
-    let run_result = run_app(&mut terminal, &mut app);
+    let run_result = run_app(&mut terminal, &mut app, root);
     if let Err(e) = restore_terminal(&mut terminal) {
         tracing::warn!(error = %e, "terminal restore failed");
     }
@@ -235,9 +236,8 @@ pub fn run(root: &Path, session_id: uuid::Uuid) -> Result<()> {
             println!("{new_id}");
             Ok(())
         }
-        ExitAction::Diff { peer: _ } => {
-            // The diff CLI lands in a follow-up commit; until then this is a
-            // no-op so the keybind is wired without a half-built side effect.
+        ExitAction::Diff { .. } => {
+            // Should never reach here: Diff is handled inline by run_app.
             Ok(())
         }
     }
@@ -258,7 +258,7 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
     Ok(())
 }
 
-fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
+fn run_app(terminal: &mut Tui, app: &mut App, root: &Path) -> Result<()> {
     while !app.quit {
         terminal.draw(|f| draw(f, app))?;
         if event::poll(Duration::from_millis(200))? {
@@ -267,6 +267,16 @@ fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
                     handle_key(app, key);
                 }
             }
+        }
+        // Handle Diff inline so the user returns to the main view on `q`.
+        if let ExitAction::Diff { peer } = &app.action {
+            let peer_id = uuid::Uuid::parse_str(peer)
+                .with_context(|| format!("parse peer session id {peer}"))?;
+            let our_id = app.parent_session;
+            // Reset before opening so a parse failure doesn't loop us.
+            app.action = ExitAction::None;
+            diff_view::run(terminal, root, our_id, peer_id)
+                .context("open side-by-side diff view")?;
         }
     }
     Ok(())

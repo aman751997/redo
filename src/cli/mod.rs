@@ -11,12 +11,14 @@
 //!   writes one dropbox file.
 //! * `fork` — branch a session at a frame; writes a new session that copies
 //!   the prefix and is annotated with parent metadata.
+//! * `diff` — text-level diff of the canonical-line projections of two sessions.
 
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 
+pub mod diff;
 pub mod fork;
 pub mod inspect;
 pub mod list;
@@ -76,6 +78,21 @@ pub enum Command {
         /// Optional user-visible label embedded in the fork marker.
         #[arg(long)]
         label: Option<String>,
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+
+    /// Print a unified-style text diff of two sessions' canonical-line
+    /// projections. No replay, no API calls — purely structural.
+    Diff {
+        session_a: String,
+        session_b: String,
+        /// Lines of unchanged context to surround each hunk.
+        #[arg(long, default_value_t = 3)]
+        context: usize,
+        /// Disable ANSI colour even on a TTY.
+        #[arg(long)]
+        no_color: bool,
         #[arg(long)]
         root: Option<PathBuf>,
     },

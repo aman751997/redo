@@ -50,6 +50,22 @@ fn main() -> Result<()> {
             println!("{new_id}");
             Ok(())
         }
+        Command::Diff {
+            session_a,
+            session_b,
+            context,
+            no_color,
+            root,
+        } => {
+            let root = cli::resolve_root(root)?;
+            let a = Uuid::parse_str(&session_a).context("parse session_a UUID")?;
+            let b = Uuid::parse_str(&session_b).context("parse session_b UUID")?;
+            let env_no_color = std::env::var("NO_COLOR")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+            let use_color = !no_color && !env_no_color;
+            cli::diff::run(&root, a, b, context, use_color)
+        }
         Command::Hook { kind, session_dir } => redo::hook::run(&kind, session_dir).map(|_| ()),
     }
 }

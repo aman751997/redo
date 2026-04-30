@@ -1,0 +1,9 @@
+--- session-a
++++ session-b
+@@ -1,4 +1,4 @@
+ #    0 Marker hook:PreToolUse [Bash]
+-#    1 Output 5 bytes
++#    1 Output 8 bytes
+ #    2 Marker hook:PostToolUse
+-#    3 Marker session_end
++#    3 Marker session_end_v2

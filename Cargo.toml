@@ -43,6 +43,9 @@ ratatui = "0.28"
 tui-tree-widget = "0.22"
 crossterm = "0.28"
 
+# Diff
+similar = "2.6"
+
 # PTY + signals
 portable-pty = "0.8"
 signal-hook = "0.3"
