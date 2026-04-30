@@ -73,9 +73,10 @@ v0.0.1 targets macOS. The recorder watches the dropbox via a 100 ms polling loop
 
 ## Status
 
-v0.0.1 in progress: hook recording + replay TUI working end-to-end, content-addressed filesystem snapshots land in v0.2.
+v0.0.1 shipped on `main`: hook recording + replay TUI working end-to-end on macOS. Content-addressed filesystem snapshots land in v0.2.
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for the milestone ladder.
+- [`CHANGELOG.md`](./CHANGELOG.md) — what shipped, per release
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — milestone ladder ahead
 
 ## Docs
 
