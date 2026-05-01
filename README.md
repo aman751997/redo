@@ -57,6 +57,12 @@ export REDO_SESSION_DIR=/path/from/banner
 
 Each invocation reads the hook's stdin JSON and atomically stages a single file in the session's `dropbox/`. The recorder watches that directory and ingests every file as one frame in the log. Hook payloads above 256 KiB are truncated and flagged on the resulting frame (the `truncated` and `truncated_original_size` fields in the marker's extras).
 
+To smoke-test the bridge by hand, use `printf '%s'` rather than `echo`. Some shells (notably zsh) expand `\n` inside `echo` arguments to a literal newline, which produces invalid JSON:
+
+```bash
+printf '%s' '{"tool_name":"Bash","output":"foo\nbar\n"}' | redo hook PostToolUse
+```
+
 ### 3. List, inspect, and replay
 
 ```bash
