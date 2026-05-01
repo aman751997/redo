@@ -4,17 +4,24 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
-### Changed
-- `Cargo.toml` `version` bumped to `0.1.0`. Recorded session headers (`redo_version`) now carry the accurate release string instead of `0.0.0`.
-
-### Fixed
-- Recorder no longer dies on a transient ingest failure (a single unreadable dropbox file or a writer hiccup): the watcher closure logs, increments a new `Meta.ingest_errors` counter, and continues. Finalize always runs, so `meta.json` reliably ends in `Complete` rather than stuck in `Recording`.
-
 ### Added
+- `Event::Output` projection from `PostToolUse[Bash]`: stdout (and stderr when stdout is empty) is captured, base64-inlined up to `MAX_INLINE_PAYLOAD`, tagged with the new optional `stream` field (`stdout` / `stderr`) and `extras.source = "bash"`. The catch-all `Marker` still ships, so the tool-call span boundary is preserved.
+- `Event::FileWrite` (new fifth variant, internally tagged on `kind = "file_write"`): projected from `PostToolUse[Edit|Write|MultiEdit]`. Re-reads the file at `tool_input.file_path`, blake3-hashes the bytes, inlines them when `size <= MAX_INLINE_PAYLOAD`, sets `truncated` + `truncated_original_size` otherwise. Race window between hook and re-read is documented as v0.2 work.
+- `FORMAT_VERSION` bumped from `1` to `2`. Readers accept v1 and v2 logs interchangeably (new fields are `#[serde(default)]`).
+- Hook-payload schema check on every ingest: `crate::hook::schema::validate` checks the envelope payload against per-kind required fields (e.g. `PostToolUse` requires `tool_name`, `tool_input`, `tool_response`). Drift fires `tracing::warn!` and bumps the new `Meta.schema_drift_events` counter; the recorder keeps running.
+- `tests/fixtures/hooks/claude_code_v1.json` pins the Claude Code hook payload shape redo depends on, sourced from the public hook docs and observed PostToolUse output. When Anthropic ships a payload change, bump the fixture and the contract in `src/hook/schema.rs`.
+- TUI: `FileWrite` is its own span kind (singleton, red on the scrub bar) with a `file_write <path> <size>B (<hash[..8]>)` summary.
 - `Meta.frame_count: u64` cached on every meta tick and on finalize. `redo list` now reads `meta.json` only and falls back to a streaming log scan only for legacy sessions whose meta predates the field.
 - `SessionReader::EventStream` streaming variant of `read` that yields one event at a time without buffering the full log.
 - Hook bridge enforces `MAX_INLINE_PAYLOAD = 256 KiB` end-to-end: oversize stdin is dropped, the envelope is flagged with `truncated: true` and `truncated_original_size`, and the projected `Marker.extras` carries the same flags through to the canonical-line summary.
 - CI matrix gains a `macos-latest` job (fmt + clippy + tests). Release matrix gains `aarch64-apple-darwin` and `x86_64-apple-darwin`.
+
+### Changed
+- `Cargo.toml` `version` bumped to `0.1.0`. Recorded session headers (`redo_version`) now carry the accurate release string instead of `0.0.0`.
+- Doc scope tightened: the determinism claim is now scoped to "the hook-visible event stream" with syscall-level determinism explicitly deferred to v0.3. Killer-feature framing for the v0.7 alignment layer demoted to "the durability bet". README adds a "Status of replay fidelity" subsection enumerating what each event variant captures and what is still out-of-scope (model reasoning tokens, network state, subprocess trees of `Bash`).
+
+### Fixed
+- Recorder no longer dies on a transient ingest failure (a single unreadable dropbox file or a writer hiccup): the watcher closure logs, increments a new `Meta.ingest_errors` counter, and continues. Finalize always runs, so `meta.json` reliably ends in `Complete` rather than stuck in `Recording`.
 
 ## [0.1.0]
 
