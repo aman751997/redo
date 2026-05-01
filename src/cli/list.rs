@@ -36,20 +36,52 @@ pub fn collect(root: &Path) -> Result<Vec<SessionSummary>> {
         let log_path = store.log_path();
         let byte_size = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
 
-        let (started_at, frame_count, is_partial) = match SessionReader::read(&log_path) {
-            Ok(r) => (r.header.created_at, r.events.len(), r.is_partial),
-            Err(e) => {
-                tracing::warn!(session = %id, error = %e, "skipping unreadable session");
-                continue;
-            }
-        };
+        // Prefer meta.json: cheap, no decompression. The cached `frame_count`
+        // and `created_at` are the source of truth for completed sessions.
+        let meta = store.read_meta().ok();
 
-        let state = store.read_meta().ok().map(|m| match m.state {
+        let state = meta.as_ref().map(|m| match m.state {
             crate::store::SessionState::Recording => "recording".to_string(),
             crate::store::SessionState::Finalizing => "finalizing".to_string(),
             crate::store::SessionState::Complete => "complete".to_string(),
             crate::store::SessionState::Crashed => "crashed".to_string(),
         });
+
+        // Fast path: meta has a non-zero frame_count (or the session is still
+        // recording, in which case meta is the freshest snapshot we have).
+        // Slow path falls back to a streaming scan only for legacy sessions
+        // (frame_count == 0 and not actively recording).
+        let needs_scan = match &meta {
+            Some(m) => {
+                m.frame_count == 0 && !matches!(m.state, crate::store::SessionState::Recording)
+            }
+            None => true,
+        };
+
+        let (started_at, frame_count, is_partial) = if needs_scan {
+            match SessionReader::read(&log_path) {
+                Ok(r) => (r.header.created_at, r.events.len(), r.is_partial),
+                Err(e) => {
+                    tracing::warn!(session = %id, error = %e, "skipping unreadable session");
+                    continue;
+                }
+            }
+        } else {
+            // Pull `created_at` from meta if we have it; otherwise read just
+            // the header off the log via the streaming reader.
+            let created_at = match meta.as_ref() {
+                Some(m) => m.created_at.clone(),
+                None => match crate::store::EventStream::open(&log_path) {
+                    Ok(s) => s.header().created_at.clone(),
+                    Err(e) => {
+                        tracing::warn!(session = %id, error = %e, "skipping unreadable session");
+                        continue;
+                    }
+                },
+            };
+            let frames = meta.as_ref().map(|m| m.frame_count as usize).unwrap_or(0);
+            (created_at, frames, false)
+        };
 
         out.push(SessionSummary {
             session_id: id,

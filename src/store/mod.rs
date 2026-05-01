@@ -17,6 +17,6 @@ pub mod session;
 pub mod writer;
 
 pub use meta::{Meta, SessionState};
-pub use reader::{ReadResult, SessionReader};
+pub use reader::{EventStream, ReadResult, SessionReader};
 pub use session::SessionStore;
 pub use writer::SessionWriter;

@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+- `Cargo.toml` `version` bumped to `0.1.0`. Recorded session headers (`redo_version`) now carry the accurate release string instead of `0.0.0`.
+
+### Fixed
+- Recorder no longer dies on a transient ingest failure (a single unreadable dropbox file or a writer hiccup): the watcher closure logs, increments a new `Meta.ingest_errors` counter, and continues. Finalize always runs, so `meta.json` reliably ends in `Complete` rather than stuck in `Recording`.
+
+### Added
+- `Meta.frame_count: u64` cached on every meta tick and on finalize. `redo list` now reads `meta.json` only and falls back to a streaming log scan only for legacy sessions whose meta predates the field.
+- `SessionReader::EventStream` streaming variant of `read` that yields one event at a time without buffering the full log.
+- Hook bridge enforces `MAX_INLINE_PAYLOAD = 256 KiB` end-to-end: oversize stdin is dropped, the envelope is flagged with `truncated: true` and `truncated_original_size`, and the projected `Marker.extras` carries the same flags through to the canonical-line summary.
+- CI matrix gains a `macos-latest` job (fmt + clippy + tests). Release matrix gains `aarch64-apple-darwin` and `x86_64-apple-darwin`.
+
 ## [0.1.0]
 
 Timeline scrubbing, fork-from-frame, and text-level diff between two recorded sessions. macOS only.

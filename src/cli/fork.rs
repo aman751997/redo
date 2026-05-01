@@ -97,6 +97,8 @@ pub fn run(root: &Path, parent: Uuid, at: u64, label: Option<String>) -> Result<
         pid: std::process::id(),
         pid_starttime: 0,
         discarded_late_events: 0,
+        ingest_errors: 0,
+        frame_count: next_seq + 1,
         created_at: header.created_at.clone(),
         parent_session_id: Some(parent),
         forked_at_frame: Some(take as u64),

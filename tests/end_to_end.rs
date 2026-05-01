@@ -204,3 +204,206 @@ fn malformed_dropbox_file_is_skipped() {
         "the bad file must not produce a frame"
     );
 }
+
+#[test]
+fn ingest_error_increments_counter_and_finalizes() {
+    // Inject a path the recorder can't read (a directory in place of a file).
+    // The watcher loop must log + count + continue, then finalize cleanly.
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let session_id = Uuid::now_v7();
+    let store = SessionStore::new(&root, session_id);
+    store.create().unwrap();
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let cfg = Config {
+        root: root.clone(),
+        session_id: Some(session_id),
+        print_banner: false,
+        stop: Some(stop.clone()),
+    };
+    let handle = thread::spawn(move || recorder::run(cfg).expect("recorder run"));
+
+    let dropbox = store.dropbox_dir();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !dropbox.is_dir() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    // A subdir whose filename matches the dropbox naming convention. The
+    // recorder will try `read()` on it and fail with `IsADirectory`. That
+    // path used to kill the loop; now it should be counted and skipped.
+    std::fs::create_dir(dropbox.join("00000000000000000001-baddir.json")).unwrap();
+
+    // Follow it up with a real envelope so we can prove the loop survived.
+    drop_synthetic_event(&dropbox, "PreToolUse", json!({"ok": true}));
+
+    // Wait for the good envelope to be ingested (the bad dir won't be).
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let count = std::fs::read_dir(&dropbox)
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| {
+                        let n = e.file_name();
+                        let s = n.to_str().unwrap_or("");
+                        !s.starts_with('.') && !s.ends_with(".tmp") && !s.contains("baddir")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        if count == 0 {
+            break;
+        }
+        if Instant::now() > deadline {
+            panic!("good dropbox file never drained");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    stop.store(true, Ordering::Relaxed);
+    handle.join().unwrap();
+
+    let meta = store.read_meta().expect("read meta");
+    assert!(
+        matches!(meta.state, redo::store::SessionState::Complete),
+        "meta should be Complete (finalize ran), got {:?}",
+        meta.state
+    );
+    assert!(
+        meta.ingest_errors >= 1,
+        "ingest_errors should have been incremented at least once, got {}",
+        meta.ingest_errors
+    );
+    // Frame count cached in meta should match what the log actually holds:
+    // one good envelope + the session_end marker = 2.
+    let result = SessionReader::read(store.log_path()).expect("read log");
+    assert_eq!(meta.frame_count as usize, result.events.len());
+}
+
+#[test]
+fn list_uses_meta_frame_count_without_decompressing_log() {
+    // After a clean recording, meta.frame_count should equal events.len() and
+    // `list::collect` should report it (proxy for the no-decompression path,
+    // since meta is the only source of that count when meta.frame_count > 0).
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let session_id = Uuid::now_v7();
+    let store = SessionStore::new(&root, session_id);
+    store.create().unwrap();
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let cfg = Config {
+        root: root.clone(),
+        session_id: Some(session_id),
+        print_banner: false,
+        stop: Some(stop.clone()),
+    };
+    let handle = thread::spawn(move || recorder::run(cfg).expect("recorder run"));
+
+    let dropbox = store.dropbox_dir();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !dropbox.is_dir() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    for i in 0..5 {
+        drop_synthetic_event(&dropbox, "PreToolUse", json!({"i": i}));
+    }
+    // Drain.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let count = std::fs::read_dir(&dropbox)
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .map(|s| !s.starts_with('.') && !s.ends_with(".tmp"))
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        if count == 0 {
+            break;
+        }
+        if Instant::now() > deadline {
+            panic!("dropbox never drained");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    stop.store(true, Ordering::Relaxed);
+    handle.join().unwrap();
+
+    let meta = store.read_meta().unwrap();
+    let result = SessionReader::read(store.log_path()).unwrap();
+    assert_eq!(meta.frame_count as usize, result.events.len());
+    assert!(meta.frame_count >= 6); // 5 hooks + session_end marker
+
+    // Now corrupt the log file so any code path that decompresses it would
+    // fail. `list::collect` should still succeed (and report the cached
+    // frame count) because it only reads meta.
+    std::fs::write(store.log_path(), b"GARBAGE NOT ZSTD").unwrap();
+
+    let summaries = redo::cli::list::collect(&root).expect("list collect");
+    let s = summaries
+        .iter()
+        .find(|s| s.session_id == session_id)
+        .expect("our session in the listing");
+    assert_eq!(s.frame_count, meta.frame_count as usize);
+}
+
+#[test]
+fn oversize_hook_payload_is_truncated_and_flagged() {
+    use redo::format::{Event, MAX_INLINE_PAYLOAD};
+    use redo::hook::{build_envelope, envelope_to_event};
+
+    // Synthesise a JSON payload comfortably above the cap.
+    let big_string: String = "a".repeat(MAX_INLINE_PAYLOAD + 1024);
+    let payload = format!("{{\"big\":\"{big_string}\"}}");
+    let mut cursor = std::io::Cursor::new(payload.as_bytes());
+
+    let env = build_envelope("PostToolUse", &mut cursor).expect("build envelope");
+    assert_eq!(env.truncated, Some(true));
+    let original = env.truncated_original_size.expect("original size set");
+    assert!(original > MAX_INLINE_PAYLOAD);
+    // Body should have been dropped.
+    assert!(env.payload.is_null());
+
+    // Project to a Marker and confirm the truncated flag survives.
+    let event = envelope_to_event(&env, 0);
+    let extras = match &event {
+        Event::Marker { extras, .. } => extras,
+        _ => panic!("expected Marker"),
+    };
+    assert_eq!(
+        extras.get("truncated").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        extras
+            .get("truncated_original_size")
+            .and_then(|v| v.as_u64()),
+        Some(original as u64)
+    );
+
+    // Canonical summary should say "(N bytes truncated)".
+    let line = redo::format::canonicalize(&event);
+    assert!(
+        line.summary.contains("truncated"),
+        "summary missing truncated marker: {}",
+        line.summary
+    );
+}
+
+#[test]
+fn small_hook_payload_round_trips_unchanged() {
+    use redo::hook::build_envelope;
+    let body = b"{\"tool_name\":\"Bash\",\"command\":\"ls\"}";
+    let mut cursor = std::io::Cursor::new(&body[..]);
+    let env = build_envelope("PreToolUse", &mut cursor).unwrap();
+    assert!(env.truncated.is_none());
+    assert!(env.truncated_original_size.is_none());
+    assert_eq!(env.payload["tool_name"], "Bash");
+}

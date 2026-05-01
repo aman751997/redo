@@ -82,3 +82,93 @@ impl SessionReader {
         })
     }
 }
+
+/// Streaming variant of `read`. Yields events one at a time without
+/// buffering the whole log into memory. Truncated trailing frames produce
+/// `None` after the last clean event (the partial flag is not returned by
+/// this iterator; callers that need it should use `read`).
+pub struct EventStream {
+    header: SessionHeader,
+    reader: BufReader<zstd::stream::read::Decoder<'static, BufReader<BufReader<File>>>>,
+    done: bool,
+}
+
+impl EventStream {
+    /// Open `path`, parse the header eagerly, and return an iterator over the
+    /// remaining events. The header is available via `header()`.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let file = File::open(path).with_context(|| format!("open log {}", path.display()))?;
+        let buf = BufReader::new(file);
+        let decoder = zstd::stream::read::Decoder::new(buf).context("init zstd decoder")?;
+        let mut reader = BufReader::new(decoder);
+        // Header is the first non-empty line.
+        let mut header: Option<SessionHeader> = None;
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let trimmed = line.trim_end_matches(['\n', '\r']);
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    header = Some(
+                        serde_json::from_str(trimmed)
+                            .with_context(|| format!("parse header: {trimmed}"))?,
+                    );
+                    break;
+                }
+                Err(e) => return Err(anyhow!("read header: {e}")),
+            }
+        }
+        let header = header.ok_or_else(|| anyhow!("log file is empty -- no header"))?;
+        Ok(Self {
+            header,
+            reader,
+            done: false,
+        })
+    }
+
+    pub fn header(&self) -> &SessionHeader {
+        &self.header
+    }
+}
+
+impl Iterator for EventStream {
+    type Item = Result<Event>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        loop {
+            let mut line = String::new();
+            match self.reader.read_line(&mut line) {
+                Ok(0) => {
+                    self.done = true;
+                    return None;
+                }
+                Ok(_) => {
+                    let trimmed = line.trim_end_matches(['\n', '\r']);
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<Event>(trimmed) {
+                        Ok(e) => return Some(Ok(e)),
+                        Err(_) => {
+                            // Truncated trailing frame or unknown variant -- stop
+                            // cleanly the same way `read` does.
+                            self.done = true;
+                            return None;
+                        }
+                    }
+                }
+                Err(_) => {
+                    self.done = true;
+                    return None;
+                }
+            }
+        }
+    }
+}

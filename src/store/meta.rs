@@ -31,6 +31,18 @@ pub struct Meta {
     /// were therefore dropped. Surfaced in `redo ls`.
     #[serde(default)]
     pub discarded_late_events: u64,
+    /// Hook ingest attempts that failed mid-loop (read error, writer error,
+    /// transient IO). The recorder logs and continues rather than dying, so
+    /// this counter surfaces how often that path fired. Distinct from
+    /// `discarded_late_events`, which counts envelopes dropped *after* the
+    /// stop signal.
+    #[serde(default)]
+    pub ingest_errors: u64,
+    /// Number of `Event` records written to the log so far. Cached in meta so
+    /// `redo list` can show frame counts without decompressing the log.
+    /// Updated on every `maybe_update_meta` tick and on finalize.
+    #[serde(default)]
+    pub frame_count: u64,
     /// ISO 8601 timestamp at session creation.
     pub created_at: String,
     /// Session id this one was forked from, if any. `None` for organic

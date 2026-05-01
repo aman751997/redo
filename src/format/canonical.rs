@@ -116,10 +116,25 @@ fn marker_summary(label: &str, extras: &serde_json::Map<String, Value>) -> Strin
         .get("payload")
         .and_then(|p| p.get("tool_name"))
         .and_then(|v| v.as_str());
-    match tool {
+    let truncated = extras
+        .get("truncated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let original = extras
+        .get("truncated_original_size")
+        .and_then(|v| v.as_u64());
+    let mut out = match tool {
         Some(t) => format!("{label} [{t}]"),
         None => label.to_string(),
+    };
+    if truncated {
+        if let Some(n) = original {
+            out.push_str(&format!(" ({n} bytes truncated)"));
+        } else {
+            out.push_str(" (truncated)");
+        }
     }
+    out
 }
 
 #[cfg(test)]

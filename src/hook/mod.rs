@@ -35,6 +35,14 @@ pub struct Envelope {
     pub received_t_ns: u64,
     /// Raw hook stdin, parsed as JSON.
     pub payload: Value,
+    /// `true` when the bridge stopped reading stdin at `MAX_INLINE_PAYLOAD`.
+    /// In that case `payload` is `Value::Null` and the original byte count is
+    /// surfaced in `truncated_original_size`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+    /// Original payload byte count when `truncated == Some(true)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated_original_size: Option<usize>,
 }
 
 impl Envelope {
@@ -44,6 +52,8 @@ impl Envelope {
             kind: kind.into(),
             received_t_ns: now_ns(),
             payload,
+            truncated: None,
+            truncated_original_size: None,
         }
     }
 }
@@ -68,20 +78,46 @@ pub fn run(kind: &str, session_dir_override: Option<PathBuf>) -> Result<PathBuf>
         return Err(anyhow!("dropbox dir does not exist: {}", dropbox.display()));
     }
 
-    let mut buf = String::new();
-    std::io::stdin()
-        .read_to_string(&mut buf)
+    let mut env = build_envelope(kind, &mut std::io::stdin().lock())?;
+    // received_t_ns was set to now() by build_envelope already.
+    let _ = &mut env;
+    write_envelope(&dropbox, &env)
+}
+
+/// Read a hook payload from `r`, capped at `MAX_INLINE_PAYLOAD` bytes. Builds
+/// an `Envelope` with `received_t_ns = now()`. Pulled out of `run` so tests
+/// can drive it without needing a real stdin.
+pub fn build_envelope<R: Read>(kind: &str, r: &mut R) -> Result<Envelope> {
+    let cap = crate::format::MAX_INLINE_PAYLOAD;
+    let mut buf = Vec::with_capacity(cap.min(8192));
+    r.take((cap as u64) + 1)
+        .read_to_end(&mut buf)
         .context("read hook stdin")?;
 
-    // Empty stdin is allowed — some hooks fire with no payload. Default to {}.
-    let payload: Value = if buf.trim().is_empty() {
-        Value::Object(Default::default())
+    let (payload, truncated, original): (Value, Option<bool>, Option<usize>) = if buf.len() > cap {
+        // Oversized: drop the body, but record the original (over-cap) size so
+        // canonicalisation surfaces "N bytes (truncated)".
+        let original = buf.len();
+        tracing::warn!(
+            cap,
+            original,
+            "hook stdin exceeded MAX_INLINE_PAYLOAD; dropping payload"
+        );
+        (Value::Null, Some(true), Some(original))
+    } else if buf.is_empty() || buf.iter().all(|b| b.is_ascii_whitespace()) {
+        // Empty stdin is allowed — some hooks fire with no payload.
+        (Value::Object(Default::default()), None, None)
     } else {
-        serde_json::from_str(&buf).with_context(|| format!("parse hook stdin as JSON: {buf}"))?
+        let s = std::str::from_utf8(&buf).context("hook stdin not valid UTF-8")?;
+        let v: Value =
+            serde_json::from_str(s).with_context(|| format!("parse hook stdin as JSON: {s}"))?;
+        (v, None, None)
     };
 
-    let env = Envelope::now(kind, payload);
-    write_envelope(&dropbox, &env)
+    let mut env = Envelope::now(kind, payload);
+    env.truncated = truncated;
+    env.truncated_original_size = original;
+    Ok(env)
 }
 
 /// Atomically write an envelope into `<dropbox>/`. The filename is
@@ -114,6 +150,15 @@ pub fn envelope_to_event(env: &Envelope, seq: u64) -> crate::format::Event {
     let mut extras: Map<String, JsonValue> = Map::new();
     extras.insert("source".into(), JsonValue::String(env.source.clone()));
     extras.insert("payload".into(), env.payload.clone());
+    if let Some(t) = env.truncated {
+        extras.insert("truncated".into(), JsonValue::Bool(t));
+    }
+    if let Some(n) = env.truncated_original_size {
+        extras.insert(
+            "truncated_original_size".into(),
+            JsonValue::Number((n as u64).into()),
+        );
+    }
     crate::format::Event::Marker {
         seq,
         t_ns: env.received_t_ns,

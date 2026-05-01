@@ -67,6 +67,8 @@ pub fn run(cfg: Config) -> Result<Uuid> {
         pid: std::process::id(),
         pid_starttime: 0,
         discarded_late_events: 0,
+        ingest_errors: 0,
+        frame_count: 0,
         created_at: header.created_at.clone(),
         parent_session_id: None,
         forked_at_frame: None,
@@ -100,11 +102,26 @@ pub fn run(cfg: Config) -> Result<Uuid> {
     };
 
     let dropbox = store.dropbox_dir();
-    watcher::watch_until_stopped(&dropbox, &stop, |path| rec.ingest_one(path))?;
+    // Catch ingest errors inside the closure so a single bad file (transient
+    // EIO, writer hiccup) doesn't kill the loop. The watcher itself can still
+    // fail (e.g. inotify init), in which case we propagate after finalize.
+    let watch_result = watcher::watch_until_stopped(&dropbox, &stop, |path| {
+        if let Err(e) = rec.ingest_one(path) {
+            tracing::warn!(file = %path.display(), error = %e, "ingest failed; continuing");
+            rec.meta.ingest_errors = rec.meta.ingest_errors.saturating_add(1);
+        }
+        Ok(())
+    });
 
     // Drain anything that landed between the last wake-up and the signal.
-    rec.drain_dropbox(MAX_DRAIN_PER_TICK)?;
+    // Same swallow-and-count policy: we want finalize to run no matter what.
+    if let Err(e) = rec.drain_dropbox(MAX_DRAIN_PER_TICK) {
+        tracing::warn!(error = %e, "post-stop drain failed; continuing to finalize");
+    }
     rec.finalize()?;
+
+    // Surface a watcher-level failure only after the log is closed cleanly.
+    watch_result?;
 
     tracing::info!(%session_id, "recorder shut down clean");
     Ok(session_id)
@@ -171,8 +188,7 @@ impl Recorder {
             return Ok(());
         }
         self.last_meta_write = Instant::now();
-        // Frame count surfaces via the writer's seq counter; we keep meta
-        // state in sync but don't add a new field for v0.0.1.
+        self.meta.frame_count = self.next_seq;
         self.store
             .write_meta(&self.meta)
             .context("rewrite meta.json")?;
@@ -190,11 +206,17 @@ impl Recorder {
             label: "session_end".into(),
             extras: serde_json::Map::new(),
         };
-        self.writer.write_event(&marker).ok();
+        let mut wrote_marker = false;
+        if self.writer.write_event(&marker).is_ok() {
+            wrote_marker = true;
+            self.next_seq += 1;
+        }
         self.writer.flush_frame().ok();
         self.writer.finish().context("finish writer")?;
 
         self.meta.state = SessionState::Complete;
+        self.meta.frame_count = self.next_seq;
+        let _ = wrote_marker; // future: surface via a counter if useful
         self.store
             .write_meta(&self.meta)
             .context("write final meta.json")?;

@@ -55,7 +55,7 @@ export REDO_SESSION_DIR=/path/from/banner
 # (similarly for PostToolUse, UserPromptSubmit, Stop, ...)
 ```
 
-Each invocation reads the hook's stdin JSON and atomically stages a single file in the session's `dropbox/`. The recorder watches that directory and ingests every file as one frame in the log.
+Each invocation reads the hook's stdin JSON and atomically stages a single file in the session's `dropbox/`. The recorder watches that directory and ingests every file as one frame in the log. Hook payloads above 256 KiB are truncated and flagged on the resulting frame (the `truncated` and `truncated_original_size` fields in the marker's extras).
 
 ### 3. List, inspect, and replay
 
