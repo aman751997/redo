@@ -99,6 +99,7 @@ pub fn run(root: &Path, parent: Uuid, at: u64, label: Option<String>) -> Result<
         discarded_late_events: 0,
         ingest_errors: 0,
         frame_count: next_seq + 1,
+        schema_drift_events: 0,
         created_at: header.created_at.clone(),
         parent_session_id: Some(parent),
         forked_at_frame: Some(take as u64),
@@ -116,7 +117,8 @@ fn reseq(e: &Event, new_seq: u64) -> Event {
         Event::Output { seq, .. }
         | Event::Input { seq, .. }
         | Event::Resize { seq, .. }
-        | Event::Marker { seq, .. } => *seq = new_seq,
+        | Event::Marker { seq, .. }
+        | Event::FileWrite { seq, .. } => *seq = new_seq,
     }
     copy
 }

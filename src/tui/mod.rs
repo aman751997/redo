@@ -534,6 +534,7 @@ fn span_color(kind: Option<SpanKind>) -> Color {
         Some(SpanKind::InputStream) => Color::Green,
         Some(SpanKind::Resize) => Color::Magenta,
         Some(SpanKind::Marker) => Color::Blue,
+        Some(SpanKind::FileWrite) => Color::Red,
         None => Color::DarkGray,
     }
 }
@@ -560,6 +561,13 @@ fn short_line(e: &Event) -> String {
         Event::Marker {
             seq, t_ns, label, ..
         } => format!("#{seq:>5}  {t_ns:>20}  Marker  {label}"),
+        Event::FileWrite {
+            seq,
+            t_ns,
+            path,
+            size,
+            ..
+        } => format!("#{seq:>5}  {t_ns:>20}  Fwrite  {path} ({size}B)"),
     }
 }
 
@@ -569,6 +577,7 @@ fn event_filter_string(e: &Event) -> String {
         Event::Input { .. } => "Input".into(),
         Event::Resize { .. } => "Resize".into(),
         Event::Marker { label, .. } => format!("Marker {label}"),
+        Event::FileWrite { path, .. } => format!("FileWrite {path}"),
     }
 }
 
@@ -591,6 +600,7 @@ mod tui_tests {
             seq,
             t_ns: 0,
             bytes: "aGk=".into(),
+            stream: None,
             truncated: None,
             truncated_original_size: None,
             extras: Map::new(),

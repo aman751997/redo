@@ -53,6 +53,7 @@ signal-hook = "0.3"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+blake3 = "1.8.5"
 
 # Linux-only: inotify for dropbox watch
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -69,6 +69,7 @@ pub fn run(cfg: Config) -> Result<Uuid> {
         discarded_late_events: 0,
         ingest_errors: 0,
         frame_count: 0,
+        schema_drift_events: 0,
         created_at: header.created_at.clone(),
         parent_session_id: None,
         forked_at_frame: None,
@@ -142,11 +143,22 @@ impl Recorder {
                 return Ok(());
             }
         };
-        let event = crate::hook::envelope_to_event(&env, self.next_seq);
-        self.writer
-            .write_event(&event)
-            .context("append hook event")?;
-        self.next_seq += 1;
+        let events = crate::hook::envelope_to_events(&env, self.next_seq);
+        for ev in &events {
+            // Bump the schema-drift counter once per missing-field warning that
+            // fired during projection. We re-validate here (cheap: shape
+            // check on a JSON map) so the counter survives even if a future
+            // refactor moves the warn site.
+            self.writer.write_event(ev).context("append hook event")?;
+            self.next_seq += 1;
+        }
+        let report = crate::hook::schema::validate(&env.kind, &env.payload);
+        if !report.ok() {
+            self.meta.schema_drift_events = self
+                .meta
+                .schema_drift_events
+                .saturating_add(report.missing_fields.len() as u64);
+        }
         // Best-effort unlink — leftover dropbox files are harmless on a retry,
         // but worth surfacing.
         if let Err(e) = std::fs::remove_file(path) {

@@ -8,11 +8,15 @@
 //!
 //! Rules:
 //!
-//! * `Output` / `Input` collapse to `"<N> bytes"` (decoded length when
-//!   available, base64-encoded length otherwise — never the raw bytes).
+//! * `Output` collapses to `"<stream> <N> bytes [<preview>]"` when projected
+//!   from a known stream (e.g. `bash <preview>`); legacy streamless captures
+//!   keep the bare `"<N> bytes"` shape.
+//! * `Input` collapses to `"<N> bytes"` (decoded length when available).
 //! * `Resize` shows the new dimensions.
 //! * `Marker` shows its label, with the hook `tool_name` from `extras.payload`
 //!   appended when present so two runs with different tool calls diff cleanly.
+//! * `FileWrite` shows the path, size, and the first 8 hex chars of the hash
+//!   so a diff surfaces "same path, different content" at a glance.
 //!
 //! The summary is intentionally short: a diff of two long sessions still has
 //! to fit on a terminal, and lines that are too noisy hide the real signal.
@@ -23,7 +27,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::format::Event;
+use crate::format::{Event, OutputStream};
 
 /// A canonical, line-oriented projection of an event used for diffs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,12 +59,14 @@ pub fn canonicalize(e: &Event) -> CanonicalLine {
         Event::Output {
             seq,
             bytes,
+            stream,
             truncated_original_size,
+            extras,
             ..
         } => CanonicalLine {
             seq: *seq,
             kind: "Output",
-            summary: bytes_summary(bytes, *truncated_original_size),
+            summary: output_summary(bytes, *stream, *truncated_original_size, extras),
         },
         Event::Input {
             seq,
@@ -86,6 +92,18 @@ pub fn canonicalize(e: &Event) -> CanonicalLine {
             kind: "Marker",
             summary: marker_summary(label, extras),
         },
+        Event::FileWrite {
+            seq,
+            path,
+            content_hash,
+            size,
+            truncated,
+            ..
+        } => CanonicalLine {
+            seq: *seq,
+            kind: "file_write",
+            summary: file_write_summary(path, *size, content_hash, *truncated),
+        },
     }
 }
 
@@ -106,6 +124,76 @@ fn bytes_summary(b64: &str, truncated_original: Option<usize>) -> String {
         Err(_) => b64.len(),
     };
     format!("{n} bytes")
+}
+
+fn output_summary(
+    b64: &str,
+    stream: Option<OutputStream>,
+    truncated_original: Option<usize>,
+    extras: &serde_json::Map<String, Value>,
+) -> String {
+    // Source tag (e.g. `bash`) comes from the projection that produced this
+    // event; stream tag (`stdout`/`stderr`) from the variant field. When
+    // neither is set we keep the legacy `"<N> bytes"` shape so older fixtures
+    // and external consumers diff cleanly across the v1 → v2 boundary.
+    let source_tag: Option<&str> = extras.get("source").and_then(|v| v.as_str());
+    let stream_tag = match stream {
+        Some(OutputStream::Stdout) => Some("stdout"),
+        Some(OutputStream::Stderr) => Some("stderr"),
+        None => None,
+    };
+
+    if source_tag.is_none() && stream_tag.is_none() {
+        return bytes_summary(b64, truncated_original);
+    }
+
+    let mut out = String::new();
+    if let Some(s) = source_tag {
+        out.push_str(s);
+        out.push(' ');
+    }
+    if let Some(s) = stream_tag {
+        out.push_str(s);
+        out.push(' ');
+    }
+
+    if let Some(orig) = truncated_original {
+        out.push_str(&format!("{orig} bytes (truncated)"));
+        return out;
+    }
+
+    let decoded: Vec<u8> = B64.decode(b64).unwrap_or_default();
+    let n = if decoded.is_empty() && !b64.is_empty() {
+        b64.len()
+    } else {
+        decoded.len()
+    };
+    let preview = preview_from_bytes(&decoded);
+    if !preview.is_empty() {
+        out.push_str(&format!("{preview} ({n} bytes)"));
+    } else {
+        out.push_str(&format!("{n} bytes"));
+    }
+    out
+}
+fn preview_from_bytes(bytes: &[u8]) -> String {
+    // Take the first line of UTF-8; cap to ~48 chars; replace non-printable
+    // bytes with `.` so binary output is still legible.
+    if bytes.is_empty() {
+        return String::new();
+    }
+    let s = String::from_utf8_lossy(bytes);
+    let first_line = s.split(['\n', '\r']).next().unwrap_or("");
+    let cleaned: String = first_line
+        .chars()
+        .map(|c| if c.is_control() { '.' } else { c })
+        .collect();
+    let mut iter = cleaned.chars();
+    let mut out: String = iter.by_ref().take(48).collect();
+    if iter.next().is_some() {
+        out.push('…');
+    }
+    out
 }
 
 fn marker_summary(label: &str, extras: &serde_json::Map<String, Value>) -> String {
@@ -137,6 +225,12 @@ fn marker_summary(label: &str, extras: &serde_json::Map<String, Value>) -> Strin
     out
 }
 
+fn file_write_summary(path: &str, size: u64, content_hash: &str, truncated: bool) -> String {
+    let short_hash: String = content_hash.chars().take(8).collect();
+    let suffix = if truncated { " (truncated)" } else { "" };
+    format!("{path} {size}B ({short_hash}){suffix}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +246,7 @@ mod tests {
             seq: 7,
             t_ns: 0,
             bytes: b64(b"hello world"),
+            stream: None,
             truncated: None,
             truncated_original_size: None,
             extras: Map::new(),
@@ -159,6 +254,7 @@ mod tests {
         let line = canonicalize(&e);
         assert_eq!(line.seq, 7);
         assert_eq!(line.kind, "Output");
+        // Streamless legacy shape (no source/stream): bare byte count.
         assert_eq!(line.summary, "11 bytes");
     }
 
@@ -168,11 +264,30 @@ mod tests {
             seq: 1,
             t_ns: 0,
             bytes: b64(b"first 4 bytes only"),
+            stream: None,
             truncated: Some(true),
             truncated_original_size: Some(1_048_576),
             extras: Map::new(),
         };
         assert_eq!(canonicalize(&e).summary, "1048576 bytes (truncated)");
+    }
+
+    #[test]
+    fn output_summary_includes_source_and_stream_tags() {
+        let mut extras = Map::new();
+        extras.insert("source".into(), Value::String("bash".into()));
+        let e = Event::Output {
+            seq: 3,
+            t_ns: 0,
+            bytes: b64(b"total 0\nfoo\n"),
+            stream: Some(OutputStream::Stdout),
+            truncated: None,
+            truncated_original_size: None,
+            extras,
+        };
+        let s = canonicalize(&e).summary;
+        assert!(s.starts_with("bash stdout "), "got: {s}");
+        assert!(s.contains("total 0"), "got: {s}");
     }
 
     #[test]
@@ -212,6 +327,41 @@ mod tests {
             extras: Map::new(),
         };
         assert_eq!(canonicalize(&e).summary, "session_end");
+    }
+
+    #[test]
+    fn file_write_summary_shows_path_size_and_short_hash() {
+        let e = Event::FileWrite {
+            seq: 9,
+            t_ns: 0,
+            path: "/tmp/foo.rs".into(),
+            content_hash: "abcdef0123456789aaaaaaaa".into(),
+            size: 42,
+            truncated: false,
+            truncated_original_size: None,
+            inline_payload: None,
+            extras: Map::new(),
+        };
+        let line = canonicalize(&e);
+        assert_eq!(line.kind, "file_write");
+        assert_eq!(line.summary, "/tmp/foo.rs 42B (abcdef01)");
+    }
+
+    #[test]
+    fn file_write_summary_marks_truncation() {
+        let e = Event::FileWrite {
+            seq: 1,
+            t_ns: 0,
+            path: "/tmp/big.bin".into(),
+            content_hash: "deadbeef00000000".into(),
+            size: 1_000_000,
+            truncated: true,
+            truncated_original_size: Some(1_000_000),
+            inline_payload: None,
+            extras: Map::new(),
+        };
+        let s = canonicalize(&e).summary;
+        assert!(s.contains("(truncated)"), "got: {s}");
     }
 
     #[test]

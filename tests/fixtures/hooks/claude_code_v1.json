@@ -1,0 +1,113 @@
+{
+  "_doc": "Pinned snapshot of the Claude Code hook payload shapes redo depends on. Sourced from public Claude Code hook documentation (Anthropic) plus observed PostToolUse output. Each block is the JSON object the bridge receives on stdin for that hook event.",
+  "_version": 1,
+  "_source_notes": "Field names per https://docs.claude.com/en/docs/claude-code/hooks (settings.json hook config -> command receives one JSON object on stdin). PostToolUse adds tool_response. Bash-specific tool_response carries stdout/stderr; Edit/Write/MultiEdit tool_input carries file_path. If Anthropic ships a payload-shape change, bump _version and update src/hook/schema.rs.",
+  "PreToolUse_Bash": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "ls -la",
+      "description": "list files"
+    }
+  },
+  "PostToolUse_Bash": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "ls -la",
+      "description": "list files"
+    },
+    "tool_response": {
+      "stdout": "total 0\n",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false
+    }
+  },
+  "PreToolUse_Edit": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "/work/src/lib.rs",
+      "old_string": "fn old()",
+      "new_string": "fn new()"
+    }
+  },
+  "PostToolUse_Edit": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "/work/src/lib.rs",
+      "old_string": "fn old()",
+      "new_string": "fn new()"
+    },
+    "tool_response": {
+      "filePath": "/work/src/lib.rs",
+      "oldString": "fn old()",
+      "newString": "fn new()",
+      "userModified": false
+    }
+  },
+  "PostToolUse_Write": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "/work/notes.txt",
+      "content": "hello\n"
+    },
+    "tool_response": {
+      "filePath": "/work/notes.txt",
+      "type": "create"
+    }
+  },
+  "PostToolUse_MultiEdit": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "MultiEdit",
+    "tool_input": {
+      "file_path": "/work/src/lib.rs",
+      "edits": [
+        {"old_string": "a", "new_string": "b"},
+        {"old_string": "c", "new_string": "d"}
+      ]
+    },
+    "tool_response": {
+      "filePath": "/work/src/lib.rs",
+      "edits": [
+        {"old_string": "a", "new_string": "b", "replace_all": false},
+        {"old_string": "c", "new_string": "d", "replace_all": false}
+      ]
+    }
+  },
+  "UserPromptSubmit": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "do the thing"
+  },
+  "Stop": {
+    "session_id": "abc",
+    "transcript_path": "/tmp/transcript.jsonl",
+    "cwd": "/work",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  }
+}

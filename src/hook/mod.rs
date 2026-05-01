@@ -5,6 +5,8 @@
 //! The on-disk dropbox format is intentionally stable across the bridge and
 //! the recorder. See [`Envelope`].
 
+pub mod schema;
+
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -143,9 +145,10 @@ pub fn write_envelope(dropbox: &Path, env: &Envelope) -> Result<PathBuf> {
     Ok(final_path)
 }
 
-/// Project a dropbox envelope onto a `Marker` event with the hook payload
-/// preserved verbatim in `extras`.
-pub fn envelope_to_event(env: &Envelope, seq: u64) -> crate::format::Event {
+/// Build the catch-all `Marker` event that every hook envelope projects to.
+/// The full payload is preserved under `extras.payload` for forensic use, and
+/// truncation flags propagate so canonicalisation can surface them.
+fn envelope_to_marker(env: &Envelope, seq: u64) -> crate::format::Event {
     use serde_json::{Map, Value as JsonValue};
     let mut extras: Map<String, JsonValue> = Map::new();
     extras.insert("source".into(), JsonValue::String(env.source.clone()));
@@ -165,4 +168,147 @@ pub fn envelope_to_event(env: &Envelope, seq: u64) -> crate::format::Event {
         label: format!("hook:{}", env.kind),
         extras,
     }
+}
+
+/// Single-event projection: the parent `Marker` only. Retained for callers
+/// (tests, external scripting) that just want the boundary event.
+pub fn envelope_to_event(env: &Envelope, seq: u64) -> crate::format::Event {
+    envelope_to_marker(env, seq)
+}
+
+/// Full projection: zero or more side events (for example a Bash `Output` or
+/// an `Edit`/`Write`/`MultiEdit` `FileWrite`) followed by the catch-all
+/// `Marker`. The recorder writes the events in the returned order.
+///
+/// Sequence numbers start at `start_seq` and increase by one per event.
+pub fn envelope_to_events(env: &Envelope, start_seq: u64) -> Vec<crate::format::Event> {
+    let mut out: Vec<crate::format::Event> = Vec::new();
+    let mut seq = start_seq;
+
+    // Validate the payload shape against the contract pinned in
+    // `schema::expected_fields`. Drift is logged but not fatal.
+    let report = schema::validate(&env.kind, &env.payload);
+    if !report.ok() {
+        schema::warn_drift(&env.kind, &report.missing_fields);
+    }
+
+    // Side events are derived only from PostToolUse[Bash|Edit|Write|MultiEdit].
+    if env.kind == "PostToolUse" {
+        let tool_name = env
+            .payload
+            .get("tool_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        match tool_name {
+            "Bash" => {
+                if let Some(ev) = project_bash_output(env, seq) {
+                    out.push(ev);
+                    seq += 1;
+                }
+            }
+            "Edit" | "Write" | "MultiEdit" => {
+                if let Some(ev) = project_file_write(env, seq) {
+                    out.push(ev);
+                    seq += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    out.push(envelope_to_marker(env, seq));
+    out
+}
+
+/// Pull `tool_response.stdout` (and fall back to `stderr` if stdout is empty
+/// or missing) out of a `PostToolUse[Bash]` envelope and project it onto an
+/// `Output` event tagged with `extras.source = "bash"`.
+fn project_bash_output(env: &Envelope, seq: u64) -> Option<crate::format::Event> {
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine;
+    use serde_json::{Map, Value as JsonValue};
+
+    let resp = env.payload.get("tool_response")?;
+    let (stream_kind, raw): (crate::format::OutputStream, &str) = match (
+        resp.get("stdout").and_then(|v| v.as_str()),
+        resp.get("stderr").and_then(|v| v.as_str()),
+    ) {
+        (Some(s), _) if !s.is_empty() => (crate::format::OutputStream::Stdout, s),
+        (_, Some(s)) if !s.is_empty() => (crate::format::OutputStream::Stderr, s),
+        _ => return None,
+    };
+
+    let cap = crate::format::MAX_INLINE_PAYLOAD;
+    let bytes = raw.as_bytes();
+    let (encoded, truncated, original_size) = if bytes.len() > cap {
+        (B64.encode(&bytes[..cap]), Some(true), Some(bytes.len()))
+    } else {
+        (B64.encode(bytes), None, None)
+    };
+
+    let mut extras: Map<String, JsonValue> = Map::new();
+    extras.insert("source".into(), JsonValue::String("bash".into()));
+
+    Some(crate::format::Event::Output {
+        seq,
+        t_ns: env.received_t_ns,
+        bytes: encoded,
+        stream: Some(stream_kind),
+        truncated,
+        truncated_original_size: original_size,
+        extras,
+    })
+}
+
+/// Pull `tool_input.file_path` out of a `PostToolUse[Edit|Write|MultiEdit]`
+/// envelope, re-read the file from disk, blake3-hash it, and project a
+/// `FileWrite` event. IO errors are logged and skipped — the parent marker
+/// still ships, so a failed re-read is loud but not fatal.
+fn project_file_write(env: &Envelope, seq: u64) -> Option<crate::format::Event> {
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine;
+    use serde_json::Map;
+
+    let path_str = env
+        .payload
+        .get("tool_input")
+        .and_then(|v| v.get("file_path"))
+        .and_then(|v| v.as_str())?;
+
+    // TODO(v0.2): close the race window between hook firing and re-read by
+    // reconstructing content from `tool_input.content` / `(old_string,
+    // new_string)` over the previous snapshot. See
+    // docs/audits/2026-05-01-state-of-the-project.md.
+    let bytes = match std::fs::read(path_str) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                path = path_str,
+                error = %e,
+                "FileWrite re-read failed; emitting marker only"
+            );
+            return None;
+        }
+    };
+
+    let cap = crate::format::MAX_INLINE_PAYLOAD;
+    let size = bytes.len() as u64;
+    let content_hash = blake3::hash(&bytes).to_hex().to_string();
+    let (inline_payload, truncated, truncated_original_size) = if bytes.len() > cap {
+        (None, true, Some(size))
+    } else {
+        (Some(B64.encode(&bytes)), false, None)
+    };
+
+    Some(crate::format::Event::FileWrite {
+        seq,
+        t_ns: env.received_t_ns,
+        path: path_str.to_string(),
+        content_hash,
+        size,
+        truncated,
+        truncated_original_size,
+        inline_payload,
+        extras: Map::new(),
+    })
 }

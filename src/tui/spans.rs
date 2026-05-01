@@ -25,6 +25,7 @@ pub enum SpanKind {
     InputStream,
     Resize,
     Marker,
+    FileWrite,
 }
 
 impl SpanKind {
@@ -35,6 +36,7 @@ impl SpanKind {
             SpanKind::InputStream => "in",
             SpanKind::Resize => "rsz",
             SpanKind::Marker => "mark",
+            SpanKind::FileWrite => "fs",
         }
     }
 }
@@ -100,6 +102,15 @@ pub fn group(events: &[Event]) -> Vec<Span> {
                     start: i,
                     end: i + 1,
                     summary: format!("resize {cols}x{rows}"),
+                });
+                i += 1;
+            }
+            Event::FileWrite { path, size, .. } => {
+                spans.push(Span {
+                    kind: SpanKind::FileWrite,
+                    start: i,
+                    end: i + 1,
+                    summary: format!("file_write {path} ({size}B)"),
                 });
                 i += 1;
             }
@@ -201,6 +212,7 @@ mod tests {
             seq,
             t_ns: seq * 1_000_000,
             bytes: "aGk=".into(),
+            stream: None,
             truncated: None,
             truncated_original_size: None,
             extras: Map::new(),

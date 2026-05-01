@@ -43,6 +43,12 @@ pub struct Meta {
     /// Updated on every `maybe_update_meta` tick and on finalize.
     #[serde(default)]
     pub frame_count: u64,
+    /// Count of hook payloads that failed schema validation against the
+    /// pinned shape in `crate::hook::schema`. Surfaces silent fidelity loss
+    /// from a Claude Code hook payload change as a loud counter on the
+    /// session.
+    #[serde(default)]
+    pub schema_drift_events: u64,
     /// ISO 8601 timestamp at session creation.
     pub created_at: String,
     /// Session id this one was forked from, if any. `None` for organic
