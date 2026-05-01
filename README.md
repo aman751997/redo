@@ -8,13 +8,19 @@
 
 ## What it is
 
-`redo` records every state transition inside a Claude Code / Agent SDK session — model tokens, tool calls, file writes, env reads, clock reads — into a framed, seekable binary log. You can then scrub back to any frame, fork from there, and diff two runs side by side. Later versions add a crowd-sourced corpus of known-bad traces and Smith-Waterman-style alignment so the debugger can tell you *"your run diverged at step 34, matches failure class #142 with E-value 1e-12."*
+`redo` is a forensic time-travel debugger for LLM agent sessions. Every state transition inside a Claude Code / Agent SDK run — model tokens, tool calls, file writes, env reads, clock reads — is recorded into a framed, seekable, content-addressed binary log on disk. The log is portable, shareable, and queryable across sessions. From it you can:
+
+- Scrub back to any frame and inspect what the agent thought was true.
+- Fork from any frame into a new replayable session.
+- Diff two runs at the structural level, with a coming sequence-alignment layer that flags drift against a corpus of known-bad traces (*"your run diverged at step 34, matches failure class #142 with E-value 1e-12"*).
 
 Closest analogy: Mozilla's `rr`, but for non-deterministic agentic systems instead of native binaries.
 
+`redo` is **not** an undo button — Claude Code's own `/rewind` already covers that case. `redo` is for the questions `/rewind` cannot answer: *why* a run failed two days ago, *whether* the same failure shape happened to someone else, and *how* this run drifts from a reference trajectory. See [`docs/WHY.md`](./docs/WHY.md#why-not-claude-codes-rewind) for the head-on comparison.
+
 ## Why it exists
 
-Every agent tool ships tracing. None ship replay. Tracing tells you *what happened*. Replay lets you *go back and look*. For a system that's non-deterministic by construction and that does destructive things to your repo, replay is the missing primitive.
+Every agent tool ships tracing. None ship replay. Tracing tells you *what happened*. Replay lets you *go back and look*, share the trace with someone else, and align it to a corpus of prior runs. For a system that's non-deterministic by construction and does destructive things to your repository, replay is the missing primitive.
 
 See [`docs/WHY.md`](./docs/WHY.md) for the origin story.
 

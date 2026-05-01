@@ -46,3 +46,26 @@ See [`STRESS-TEST.md`](./STRESS-TEST.md) for the adversarial read of this premis
 - **Just a transcript viewer.** What Langfuse and Braintrust already ship. Doesn't let you fork, diff, or restore filesystem state.
 - **Let Anthropic ship it.** They might, for the simple replay layer. They won't for the corpus-alignment layer (too standalone). The indie play is to build the durable layer first and accept that the simple layer is a commodity in 18 months.
 - **Wait for rr2 or LLDB-for-agents.** The prior art for time-travel debugging is a decade old and still hasn't made it to the agent domain. Someone has to port it. That someone can be you.
+
+## Why not Claude Code's `/rewind`
+
+Claude Code ships a `/rewind` slash command that reverts the conversation and (optionally) restores file state to a prior turn-level checkpoint. It's the right tool for "undo the last few steps and try again." It is **not** the same shape as redo:
+
+| Axis | `/rewind` | redo |
+|---|---|---|
+| Scope | In-process, current session only | Out-of-process recorder; standalone artifact on disk |
+| Action | Mutates state back (destructive) | Read-only inspectable log (additive) |
+| Granularity | Conversation-turn checkpoints | Per-frame: model token, tool call, fs op |
+| Diff two runs | No | `redo diff`, side-by-side |
+| Cross-session search | No | Index over all sessions on a root |
+| Fork-from-frame | Implicit (it's the new head) | Explicit, named, replayable independently |
+| Survives session end | Best-effort, in Claude's storage | Persistent log forever, content-addressed |
+| Shareable | No | Yes — log is a self-contained artifact |
+| Audience | User mid-task | Debugger, post-mortem, sharing, training data |
+
+Different shape, different audience. `/rewind` ≈ `git reset --hard`. redo ≈ `rr` + `git log -p` for agents.
+
+**Honest overlap and where redo still has room:**
+- The "I want to back out and try again" use case is fully covered by `/rewind`. redo doesn't compete there and shouldn't pretend to.
+- The CoW filesystem-snapshot layer (v0.2) overlaps with Claude's checkpoint store. redo's value-add is that the snapshot is a portable, content-addressed, dedup-across-sessions, queryable artifact — not a private checkpoint tied to one session's state.
+- Forensics ("why did this run blow up two days ago"), comparison ("did this same failure happen yesterday"), reproducibility ("send me your trace"), and corpus alignment (v0.7 — "is this run drifting from a known-good trajectory") are not addressable by `/rewind` and likely never will be. Those are the bets.
