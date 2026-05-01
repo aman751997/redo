@@ -19,9 +19,11 @@ Milestone ladder with honest time estimates. Solo, 80% of time on core, 20% on u
 | **v0.2** | Content-addressed filesystem snapshots (userspace CoW via blake3 Merkle). Replay actually restores file state at any frame. | **+2–3 months** | **+4–5 weeks** |
 | **v0.3** | PTY interception + syscall capture. Clock virtualization. `/dev/urandom` interception. The "real determinism" layer. | **+3–4 months** | **+6–8 weeks** |
 | **v0.4** | Fork-from-frame with external-API mocking (return recorded responses). Query DSL for trace search. | **+1.5 months** | **+3 weeks** |
+
+> **v0.4 stretch — synthetic corpus generator.** Mutation-style perturbations of known-good traces (drop a tool call, swap two tool calls, mutate args, inject an error result). Calibrates the v0.7 substitution matrix without waiting on real-user adoption. ~2–3 weeks on top of the base v0.4 budget.
 | **v0.5** | Linux port (`LD_PRELOAD` shim + inotify fast path already compiled in). | **+3 months** | **+6 weeks** |
 | **v0.6** | Hosted ingestion + multi-tenancy + PII boundaries for corpus contributions. Paid tier. | **+2 months** | **+4 weeks** |
-| **v0.7** | BLAST / Smith-Waterman alignment engine + substitution matrix learned from seed corpus. **The killer feature.** | **+2–3 months** | **+4–6 weeks** |
+| **v0.7** | BLAST / Smith-Waterman alignment engine + substitution matrix learned from seed corpus. **The durability bet.** | **+2–3 months** | **+4–6 weeks** |
 | **v1.0** | Polish, onboarding flow, docs site, auth, billing, telemetry. | **+1.5–2 months** | **+3–4 weeks** |
 
 ---

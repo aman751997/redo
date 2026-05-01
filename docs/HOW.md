@@ -61,7 +61,7 @@ Architecture and design decisions. This doc is written for the kind of reader wh
 
 The non-determinism of the LLM is the reason replay is hard. The move is to push the non-determinism outside your recording boundary — record what came back from the model, hash it, and on replay return the recorded response as a lookup.
 
-**Consequence:** replay is deterministic even though the recorded system is not.
+**Consequence:** replay is deterministic *with respect to the agent's hook-visible event stream* — same hook events in the same order, same captured stdout for `Bash`, same blake3-pinned file content for `Edit`/`Write`/`MultiEdit`. Syscall-level determinism (clock, randomness, network) lands in v0.3; v0.0.1–v0.2 do not claim it.
 
 **Tradeoff:** you cannot "replay with a different prompt." The product scope is *"rewind this run as it happened"*, not *"what would have happened if I had asked differently."* The latter is much harder (Pernosco-level) and is explicitly out of v1.
 
@@ -188,10 +188,16 @@ These are deliberately excluded from v1:
 
 ---
 
-## Open questions (answer by v0.1 ship)
+## Open questions (rolling — versioned by milestone)
 
-- [ ] Hook point — at the Agent SDK boundary, the Claude Code CLI boundary, or the pty level? Probably SDK for Node, pty as fallback.
+Resolved in v0.1:
+
+- **Hook point — at the Agent SDK boundary, the Claude Code CLI boundary, or the pty level?** Hook bridge wins for v0.0.1–v0.2 (the `redo hook <kind>` subcommand consumes the Claude Code hook payload from stdin). Syscall-level capture (`DYLD_INSERT_LIBRARIES`) is the v0.3 boundary; v0.x is *not* deterministic at the syscall layer.
+- **Frame schema versioning.** `FORMAT_VERSION = 2` as of this milestone. Readers accept v1 and v2 logs interchangeably (new fields are `#[serde(default)]`); writers emit v2 going forward. Future bumps follow the same forward-compat rule.
+
+Open for v0.2+:
+
 - [ ] How to handle tool calls that hit MCP servers that aren't locally run? (Record the JSON-RPC roundtrip; replay the response.)
-- [ ] How to handle subprocess trees spawned by tools? (Extend recording boundary to subprocess stdio.)
-- [ ] Frame schema versioning — how do we handle a trace recorded with v0.1 opened in v0.3?
+- [ ] How to handle subprocess trees spawned by tools? (Extend recording boundary to subprocess stdio. Today `Bash` `tool_response.stdout` is captured but the subprocess tree is not.)
+- [ ] Race window between `PostToolUse[Edit|Write]` firing and the recorder's re-read. v0.2 closes this by reconstructing content from `tool_input` over the previous CoW snapshot. v0.0.1–v0.1 explicitly accept the race.
 - [ ] Should the hosted corpus accept traces from private repos? (Probably: PII-scrub at upload boundary, opt-in only.)

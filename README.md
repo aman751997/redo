@@ -12,7 +12,7 @@
 
 - Scrub back to any frame and inspect what the agent thought was true.
 - Fork from any frame into a new replayable session.
-- Diff two runs at the structural level, with a coming sequence-alignment layer that flags drift against a corpus of known-bad traces (*"your run diverged at step 34, matches failure class #142 with E-value 1e-12"*).
+- Diff two runs at the structural level. A later **alignment layer** flags drift against a corpus of known-bad traces (*"your run diverged at step 34, matches failure class #142 with E-value 1e-12"*) — the durability bet, not a v0.0.1 claim.
 
 Closest analogy: Mozilla's `rr`, but for non-deterministic agentic systems instead of native binaries.
 
@@ -28,11 +28,28 @@ See [`docs/WHY.md`](./docs/WHY.md) for the origin story.
 
 Three design decisions carry most of the weight:
 
-1. **Record model outputs, never re-infer.** The non-determinism of the LLM is the reason replay is hard, so on replay the "model call" is a lookup, not an API call.
+1. **Record model outputs, never re-infer.** The non-determinism of the LLM is the reason replay is hard, so on replay the "model call" is a lookup, not an API call. Replay today is **deterministic with respect to the hook-visible event stream**: syscall-level determinism (clock, randomness, network) is a v0.3 milestone, not a v0.0.1 claim.
 2. **Framed binary log with a seek index.** Inspired by ARINC 717 flight-data recording. Zstd with a trained dictionary gets ~12× compression on real traces.
 3. **Content-addressed filesystem snapshots.** Userspace CoW via blake3 Merkle trees — cross-platform, dedup-for-free, no kernel module, no OverlayFS dependency.
 
 See [`docs/HOW.md`](./docs/HOW.md) for the full design walk-through.
+
+### Status of replay fidelity
+
+What v0.1 captures today, by event variant:
+
+- `Marker` for every Claude Code hook (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `Notification`, …) with the verbatim payload preserved in `extras`.
+- `Output` for `PostToolUse[Bash]`, carrying the captured stdout (or stderr if stdout is empty) tagged with `extras.source = "bash"`.
+- `FileWrite` for `PostToolUse[Edit|Write|MultiEdit]`: blake3 hash + size + (when ≤ `MAX_INLINE_PAYLOAD`) the file's bytes, re-read from disk after the hook fires.
+
+What it does **not** capture yet — and that the term "deterministic replay" must be read against:
+
+- Model reasoning tokens and any hidden chain-of-thought the hook payload doesn't surface.
+- Network state visited by `Bash` tool calls (`curl`, package fetches, MCP HTTP roundtrips).
+- Subprocess trees spawned by `Bash` and any side effects outside the hook's `tool_response`.
+- Clock, randomness, and environment reads at the syscall layer — these arrive in v0.3 (`DYLD_INSERT_LIBRARIES` interposing).
+
+When Claude Code changes a hook payload shape, the recorder logs a `tracing::warn!` and bumps `Meta.schema_drift_events`. The pinned shape lives at `tests/fixtures/hooks/claude_code_v1.json`.
 
 ## Quick start
 
