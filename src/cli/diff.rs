@@ -1,8 +1,6 @@
 //! `redo diff` — text-level diff of two sessions' canonical-line projections.
 //!
-//! v0.1 ships a Myers diff via the `similar` crate. The Smith-Waterman
-//! alignment engine — which understands non-trivial edits between agent runs
-//! — lands in v0.7.
+//! Myers diff via the `similar` crate over canonical-line projections.
 //!
 //! Each session is rendered as a sequence of lines via [`crate::format::canonicalize_all`].
 //! That projection is line-oriented, payload-free, and stable, so the diff

@@ -417,7 +417,7 @@ fn draw(f: &mut ratatui::Frame, app: &mut App) {
     let fs = Paragraph::new(vec![
         Line::from(""),
         Line::from(TextSpan::raw("filesystem snapshot")),
-        Line::from(TextSpan::raw("(available in v0.2)")),
+        Line::from(TextSpan::raw("(not yet implemented)")),
     ])
     .block(Block::default().borders(Borders::ALL).title("fs"));
     f.render_widget(fs, cols[2]);

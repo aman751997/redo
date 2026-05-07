@@ -44,7 +44,7 @@ The commercial angle matters less than the technical bet, but for completeness:
 
 - **Just better tracing.** OTel spans can't capture enough state to replay. Every "richer span" effort runs into cardinality and retention walls.
 - **Just a transcript viewer.** What Langfuse and Braintrust already ship. Doesn't let you fork, diff, or restore filesystem state.
-- **Let Anthropic ship it.** They might, for the simple replay layer. The corpus-alignment layer is the durability bet, not a feature anyone bolts on in a quarter — a multi-year corpus-acquisition problem rather than a coding problem. The indie play is to build that durable layer first and accept that the simple layer is a commodity in 18 months.
+- **Let Anthropic ship it.** They might, for the simple replay layer. The corpus-alignment layer is harder — a data-acquisition problem, not a coding problem.
 - **Wait for rr2 or LLDB-for-agents.** The prior art for time-travel debugging is a decade old and still hasn't made it to the agent domain. Someone has to port it. That someone can be you.
 
 ## Why not Claude Code's `/rewind`
@@ -67,7 +67,7 @@ Different shape, different audience. `/rewind` ≈ `git reset --hard`. redo ≈ 
 
 **Honest overlap and where redo still has room:**
 - The "I want to back out and try again" use case is fully covered by `/rewind`. redo doesn't compete there and shouldn't pretend to.
-- The CoW filesystem-snapshot layer (v0.2) overlaps with Claude's checkpoint store. redo's value-add is that the snapshot is a portable, content-addressed, dedup-across-sessions, queryable artifact — not a private checkpoint tied to one session's state.
-- Forensics ("why did this run blow up two days ago"), comparison ("did this same failure happen yesterday"), reproducibility ("send me your trace"), and corpus alignment (v0.7 — "is this run drifting from a known-good trajectory") are not addressable by `/rewind` and likely never will be. Those are the bets.
+- The CoW filesystem-snapshot layer overlaps with Claude's checkpoint store. redo's value-add is that the snapshot is a portable, content-addressed, dedup-across-sessions, queryable artifact — not a private checkpoint tied to one session's state.
+- Forensics ("why did this run blow up two days ago"), comparison ("did this same failure happen yesterday"), reproducibility ("send me your trace"), and corpus alignment ("is this run drifting from a known-good trajectory") are not addressable by `/rewind` and likely never will be.
 
-**What stops Anthropic from shipping this?** Honestly: nothing in the v0.0.1–v0.6 layer. If they wanted to ship `claude session export` plus a hosted compare view tomorrow, they could; the durability bet for redo lives in the corpus-alignment layer, and that bet is a multi-year corpus-acquisition problem, not a coding problem. The plan is honest about that — see [`docs/ROADMAP.md`](./ROADMAP.md) for the v0.4 synthetic-corpus stretch that unblocks v0.7 calibration without waiting on real users.
+**What stops Anthropic from shipping this?** Nothing, for the basic replay layer. The longer-term value is in the corpus-alignment layer — comparing runs against a growing body of recorded traces. That's a data-acquisition problem, not a coding problem.

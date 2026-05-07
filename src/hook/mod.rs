@@ -275,10 +275,8 @@ fn project_file_write(env: &Envelope, seq: u64) -> Option<crate::format::Event> 
         .and_then(|v| v.get("file_path"))
         .and_then(|v| v.as_str())?;
 
-    // TODO(v0.2): close the race window between hook firing and re-read by
-    // reconstructing content from `tool_input.content` / `(old_string,
-    // new_string)` over the previous snapshot. See
-    // docs/audits/2026-05-01-state-of-the-project.md.
+    // TODO: close the race window between hook firing and re-read by
+    // reconstructing content from tool_input over the previous snapshot.
     let bytes = match std::fs::read(path_str) {
         Ok(b) => b,
         Err(e) => {

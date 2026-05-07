@@ -39,9 +39,9 @@ flowchart TD
 
 The non-determinism of the LLM is the reason replay is hard. The move is to push the non-determinism outside your recording boundary — record what came back from the model, hash it, and on replay return the recorded response as a lookup.
 
-**Consequence:** replay is deterministic *with respect to the agent's hook-visible event stream* — same hook events in the same order, same captured stdout for `Bash`, same blake3-pinned file content for `Edit`/`Write`/`MultiEdit`. Syscall-level determinism (clock, randomness, network) lands in v0.3; v0.0.1–v0.2 do not claim it.
+**Consequence:** replay is deterministic *with respect to the agent's hook-visible event stream* — same hook events in the same order, same captured stdout for `Bash`, same blake3-pinned file content for `Edit`/`Write`/`MultiEdit`. Syscall-level determinism (clock, randomness, network) is not yet implemented.
 
-**Tradeoff:** you cannot "replay with a different prompt." The product scope is *"rewind this run as it happened"*, not *"what would have happened if I had asked differently."* The latter is much harder (Pernosco-level) and is explicitly out of v1.
+**Tradeoff:** you cannot "replay with a different prompt." The scope is *"rewind this run as it happened"*, not *"what would have happened if I had asked differently."* The latter is much harder (Pernosco-level) and out of scope.
 
 ### 2. Framed binary log with a seek index
 
@@ -90,16 +90,16 @@ Mechanism differs per platform:
 
 ### 5. TUI / Viewer
 
-v0.1 ships a Ratatui-style TUI:
+Ratatui-style TUI:
 
 - Left pane: timeline with frames grouped into tool-call spans
 - Middle pane: frame details at cursor
 - Right pane: filesystem view of state at frame N
 - Keybindings: `j/k` step, `shift-J/K` jump spans, `f` fork, `d` diff mode, `/` query
 
-v0.2+ adds a web viewer for the hosted tier. TUI stays for local.
+A web viewer for a hosted tier is a future possibility. TUI stays for local use.
 
-### 6. Query DSL (v0.4)
+### 6. Query DSL (planned)
 
 Small language for searching over frames:
 
@@ -116,7 +116,7 @@ frame:model-token where text matches /```sql/
 
 Roughly: Datalog shape, but closed over frame-stream primitives. Compiles to an index lookup plan.
 
-### 7. Sequence alignment (v0.7)
+### 7. Sequence alignment (planned)
 
 For each frame, extract a canonical tuple:
 
@@ -139,14 +139,14 @@ Output: *"your run aligned with failure corpus entry #142 with score 412, E-valu
 
 ## Non-goals (explicit)
 
-These are deliberately excluded from v1:
+These are deliberately excluded:
 
 - **Replay with a different prompt** — too hard; scope creep.
-- **Distributed / multi-agent replay** — single-process v1 only.
-- **Network-level record/replay** — HTTPS record/replay is a separate product.
+- **Distributed / multi-agent replay** — single-process only.
+- **Network-level record/replay** — HTTPS record/replay is a separate problem.
 - **Fine-grained CPU determinism** — we are above the syscall boundary, not at instruction level.
-- **Windows support** — macOS + Linux first. Windows in 2027 if demand.
-- **Real-time streaming to cloud** — v1 is file-on-disk.
+- **Windows support** — macOS + Linux first.
+- **Real-time streaming to cloud** — file-on-disk for now.
 
 ---
 
@@ -158,24 +158,22 @@ These are deliberately excluded from v1:
 - Easy cross-compilation.
 - Memory safety in the recording boundary is load-bearing.
 
-**TUI:** Rust (Ratatui) or Go (bubbletea). Leaning Rust to keep one language.
+**TUI:** Rust (Ratatui).
 
-**Hosted viewer (later):** TypeScript + React. No reason to be clever.
-
-**Frame schema:** Protocol Buffers or Cap'n Proto. Cap'n Proto leaning for zero-copy reads.
+**Frame schema:** NDJSON-on-zstd for now. Cap'n Proto is an option if zero-copy reads become important.
 
 ---
 
-## Open questions (rolling — versioned by milestone)
+## Open questions
 
-Resolved in v0.1:
+Resolved:
 
-- **Hook point — at the Agent SDK boundary, the Claude Code CLI boundary, or the pty level?** Hook bridge wins for v0.0.1–v0.2 (the `redo hook <kind>` subcommand consumes the Claude Code hook payload from stdin). Syscall-level capture (`DYLD_INSERT_LIBRARIES`) is the v0.3 boundary; v0.x is *not* deterministic at the syscall layer.
-- **Frame schema versioning.** `FORMAT_VERSION = 2` as of this milestone. Readers accept v1 and v2 logs interchangeably (new fields are `#[serde(default)]`); writers emit v2 going forward. Future bumps follow the same forward-compat rule.
+- **Hook point — at the Agent SDK boundary, the Claude Code CLI boundary, or the pty level?** Hook bridge (the `redo hook <kind>` subcommand consumes the hook payload from stdin). Syscall-level capture (`DYLD_INSERT_LIBRARIES`) is a future option.
+- **Frame schema versioning.** `FORMAT_VERSION = 2`. Readers accept v1 and v2 logs interchangeably (new fields are `#[serde(default)]`); writers emit v2. Future bumps follow the same forward-compat rule.
 
-Open for v0.2+:
+Open:
 
 - [ ] How to handle tool calls that hit MCP servers that aren't locally run? (Record the JSON-RPC roundtrip; replay the response.)
-- [ ] How to handle subprocess trees spawned by tools? (Extend recording boundary to subprocess stdio. Today `Bash` `tool_response.stdout` is captured but the subprocess tree is not.)
-- [ ] Race window between `PostToolUse[Edit|Write]` firing and the recorder's re-read. v0.2 closes this by reconstructing content from `tool_input` over the previous CoW snapshot. v0.0.1–v0.1 explicitly accept the race.
-- [ ] Should the hosted corpus accept traces from private repos? (Probably: PII-scrub at upload boundary, opt-in only.)
+- [ ] How to handle subprocess trees spawned by tools? (Extend recording boundary to subprocess stdio. Currently `Bash` `tool_response.stdout` is captured but the subprocess tree is not.)
+- [ ] Race window between `PostToolUse[Edit|Write]` firing and the recorder's re-read. Fix: reconstruct content from `tool_input` over the previous snapshot.
+- [ ] Should a hosted corpus accept traces from private repos? (Probably: PII-scrub at upload boundary, opt-in only.)

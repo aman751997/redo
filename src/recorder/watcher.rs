@@ -5,7 +5,7 @@
 //! others are belt-and-suspenders.
 //!
 //! Non-Linux: poll the directory every 100 ms. Good enough for tests and dev
-//! on macOS; Linux is the supported v0.0.1 target.
+//! on macOS.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

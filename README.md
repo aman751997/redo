@@ -125,17 +125,17 @@ Inside `redo replay`: press `f` to fork at cursor, `d` to open side-by-side diff
 | `Output` | `PostToolUse[Bash]` | stdout (or stderr fallback), tagged `extras.source = "bash"` |
 | `FileWrite` | `PostToolUse[Edit\|Write\|MultiEdit]` | blake3 hash + size + inline bytes (≤ 256 KiB) |
 
-**Not yet captured:** model reasoning tokens, network state from `Bash` subprocesses, syscall-level clock/randomness (v0.3).
+**Not yet captured:** model reasoning tokens, network state from `Bash` subprocesses, syscall-level clock/randomness.
 
 When Claude Code changes a hook payload shape, the recorder logs a warning and bumps `Meta.schema_drift_events`.
 
 ## Platform
 
-v0.1 targets macOS. Linux `inotify` path compiles but is not the primary target yet. Full Linux port is v0.5.
+Targets macOS. Linux `inotify` path compiles but is not the primary target yet.
 
 ## Status
 
-v0.1 is current — span grouping, scrub bar, fork-from-frame, text-level diff. v0.2 adds content-addressed filesystem snapshots.
+Current: span grouping, scrub bar, fork-from-frame, text-level diff. Next up: content-addressed filesystem snapshots.
 
 - [`CHANGELOG.md`](./CHANGELOG.md) — what shipped
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) — what's next
@@ -144,7 +144,7 @@ v0.1 is current — span grouping, scrub bar, fork-from-frame, text-level diff. 
 
 - [`docs/WHY.md`](./docs/WHY.md) — origin story and thesis
 - [`docs/HOW.md`](./docs/HOW.md) — architecture and design decisions
-- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — milestone ladder
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — what's next
 
 ## Contributing
 

@@ -20,8 +20,7 @@ pub enum OutputStream {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind")]
 pub enum Event {
-    /// Captured stdout/stderr. Today projected from `PostToolUse[Bash]` hook
-    /// payloads; v0.3 will additionally carry pty-level captures.
+    /// Captured stdout/stderr, projected from `PostToolUse[Bash]` hook payloads.
     Output {
         seq: u64,
         t_ns: u64,
