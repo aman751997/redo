@@ -31,48 +31,76 @@ See [`docs/HOW.md`](./docs/HOW.md) for the full architecture walk-through.
 
 ## Quick start
 
+### Prerequisites
+
+- [Rust toolchain](https://rustup.rs/) (1.75+)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and working
+
 ### Install
 
 ```bash
+git clone https://github.com/aman751997/redo.git
+cd redo
 cargo install --path .
 ```
 
-Or run from the repo: `cargo run --release -- <args>` everywhere below says `redo <args>`.
+Or skip the install and run from the repo: use `cargo run --release --` in place of `redo` in every command below.
 
-### 1. Record a session
+### 1. Start recording (Terminal 1)
+
+Open a terminal and start the recorder:
 
 ```bash
 redo record
 ```
 
-Prints a session banner with `REDO_SESSION_DIR`. Runs until `SIGINT`/`SIGTERM`.
+It prints a banner like this:
 
-### 2. Wire Claude Code hooks
+```
+session_id=018f2a5b-...
+session_dir=/Users/you/.local/share/redo/sessions/018f2a5b-...
+dropbox=/Users/you/.local/share/redo/sessions/018f2a5b-.../dropbox
+env REDO_SESSION_DIR=/Users/you/.local/share/redo/sessions/018f2a5b-...
+```
 
-Export the session dir from the banner, then point each hook at the bridge:
+Leave this running — the recorder captures events until you press `Ctrl-C`.
+
+### 2. Wire Claude Code hooks (Terminal 2)
+
+In a **second terminal**, export the session dir printed by the recorder:
 
 ```bash
-export REDO_SESSION_DIR=/path/from/banner
+export REDO_SESSION_DIR=/Users/you/.local/share/redo/sessions/018f2a5b-...
 ```
 
-In your hook config (`~/.claude/settings.json`):
+Add hooks to your Claude Code config (`~/.claude/settings.json`):
 
+```json
+{
+  "hooks": {
+    "PreToolUse": [{ "type": "command", "command": "redo hook PreToolUse" }],
+    "PostToolUse": [{ "type": "command", "command": "redo hook PostToolUse" }],
+    "UserPromptSubmit": [{ "type": "command", "command": "redo hook UserPromptSubmit" }],
+    "Stop": [{ "type": "command", "command": "redo hook Stop" }],
+    "Notification": [{ "type": "command", "command": "redo hook Notification" }]
+  }
+}
 ```
-command: redo hook PreToolUse
-```
 
-Repeat for `PostToolUse`, `UserPromptSubmit`, `Stop`, `Notification`.
+Now run Claude Code from this terminal. Every tool call, prompt, and file write flows through the hooks into the recorder.
 
-Smoke test:
+Smoke test (without Claude Code):
 ```bash
 printf '%s' '{"tool_name":"Bash","output":"hello\n"}' | redo hook PostToolUse
 ```
 
-### 3. Replay, inspect, list
+### 3. Stop recording, then explore
+
+Press `Ctrl-C` in Terminal 1 to stop the recorder. Then:
 
 ```bash
-redo list                       # table of sessions
-redo inspect <SESSION_ID>       # frames as NDJSON
+redo list                       # table of all sessions
+redo inspect <SESSION_ID>       # dump frames as NDJSON
 redo replay  <SESSION_ID>       # scrubbable TUI
 ```
 
@@ -85,9 +113,9 @@ redo fork <SESSION_ID> --at 42 --label experiment
 redo diff <SESSION_A> <SESSION_B> --context 5
 ```
 
-Fork branches a session at any frame. Diff compares two sessions via Myers diff over canonical projections.
+Fork branches a session at any frame — the new session is a standalone recording. Diff compares two sessions via Myers diff over canonical projections.
 
-Inside `redo replay`: `f` forks at cursor, `d` opens side-by-side diff view.
+Inside `redo replay`: press `f` to fork at cursor, `d` to open side-by-side diff view.
 
 ## What v0.1 captures
 
