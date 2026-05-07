@@ -6,51 +6,29 @@ Architecture and design decisions. This doc is written for the kind of reader wh
 
 ## System overview
 
-```
-┌────────────────────────────┐
-│   Claude Code / Agent SDK  │
-└──────────────┬─────────────┘
-               │ (hooks, pty, stdio)
-               ▼
-┌────────────────────────────┐
-│        Recorder            │
-│  - pty intercept           │
-│  - tool-call capture       │
-│  - model-stream capture    │
-│  - fs-op capture           │
-│  - env/clock capture       │
-└──────────────┬─────────────┘
-               │ frames
-               ▼
-┌────────────────────────────┐
-│      Framed Log Store      │   ◄──── seek index
-│  - zstd-trained dictionary │
-│  - blake3 frame hashes     │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│       CoW Object Store     │
-│  - blake3 content-addr     │
-│  - Merkle tree per frame   │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│        Replay Engine       │
-│  - frame seek              │
-│  - fs restore at frame N   │
-│  - model-output lookup     │
-│  - fork-from-frame         │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│         TUI / Viewer       │
-│  - timeline scrubber       │
-│  - diff two runs           │
-│  - query DSL over frames   │
-└────────────────────────────┘
+```mermaid
+flowchart TD
+    A["Claude Code / Agent SDK"] -->|hooks, pty, stdio| B
+
+    B["Recorder
+    pty intercept · tool-call capture
+    model-stream capture · fs-op capture
+    env/clock capture"] -->|frames| C
+
+    C["Framed Log Store
+    zstd-trained dictionary · blake3 frame hashes"] --> D
+    SI["Seek Index"] -.-> C
+
+    D["CoW Object Store
+    blake3 content-addr · Merkle tree per frame"] --> E
+
+    E["Replay Engine
+    frame seek · fs restore at frame N
+    model-output lookup · fork-from-frame"] --> F
+
+    F["TUI / Viewer
+    timeline scrubber · diff two runs
+    query DSL over frames"]
 ```
 
 ---

@@ -38,7 +38,7 @@ The commercial angle matters less than the technical bet, but for completeness:
 - Tracing incumbents (Langfuse, Braintrust, Arize) built on OTel and cannot retrofit replay. That asymmetry is structural, not a matter of effort.
 - The corpus-alignment layer compounds with users — each failing run recorded sharpens the next user's diagnosis.
 
-See [`STRESS-TEST.md`](./STRESS-TEST.md) for the adversarial read of this premise.
+<!-- adversarial premise review is tracked internally, not published -->
 
 ## Why not the alternatives
 

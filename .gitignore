@@ -6,3 +6,4 @@ Cargo.lock.bak
 *.swo
 .idea/
 .vscode/
+docs/audits/
