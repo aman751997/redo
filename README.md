@@ -9,7 +9,7 @@
 
 Closest analogy: Mozilla's [`rr`](https://rr-project.org/), but for non-deterministic agentic systems instead of native binaries.
 
-<!-- TODO: add demo GIF here once TUI recording is ready -->
+![demo](demo.gif)
 
 ## Why
 
